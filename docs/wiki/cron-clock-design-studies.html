@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cron Clock — Design Studies</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #171b24; --inset: #0a0c12;
+    --tp: #e8eaf0; --ts: #7a8394; --border: #454d66;
+    --accent: #22c55e; --green: #22c55e; --yellow: #facc15; --amber: #f59e0b;
+    --blue: #60a5fa; --red: #f87171; --purple: #c084fc;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--tp); font: 14px/1.5 ui-sans-serif, system-ui, sans-serif; padding: 28px 32px 80px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 42px 0 10px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+  p, li { color: #b6bcc9; font-size: 13px; max-width: 80ch; }
+  .sub { color: var(--ts); margin: 0 0 18px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 18px; align-items: start; }
+  .study { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+  .study .cap { font-size: 11px; color: var(--ts); margin-top: 8px; line-height: 1.45; }
+  .study .cap b { color: var(--tp); }
+  .tag { display: inline-block; font-size: 10px; letter-spacing: .05em; text-transform: uppercase; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--border); color: var(--ts); margin: 0 6px 6px 0; }
+  .tag.rec { border-color: var(--green); color: var(--green); }
+  .tag.bad { border-color: var(--red); color: var(--red); }
+  .tag.p3 { border-color: var(--blue); color: var(--blue); }
+  code { font-family: var(--mono); font-size: 11.5px; background: var(--inset); padding: 0 4px; border-radius: 3px; color: #cbd5e1; }
+  table { border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+  td, th { border: 1px solid var(--border); padding: 4px 8px; text-align: left; color: #b6bcc9; vertical-align: top; }
+  th { color: var(--tp); font-weight: 600; }
+
+  /* ---------- sidebar mock ---------- */
+  .sidebar { width: 262px; background: var(--inset); border: 1px solid var(--border); border-radius: 6px; font-family: var(--mono); font-size: 11px; overflow: hidden; }
+  .secrail { display: flex; gap: 4px; padding: 6px 8px; }
+  .secrail .sb { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 4px; color: var(--ts); font-size: 12px; }
+  .secrail .sb.on { color: var(--green); background: color-mix(in srgb, var(--green) 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--green) 45%, transparent); }
+  .cp { border-top: 1px solid var(--border); }
+  .cp .cph { display: flex; align-items: center; gap: 6px; padding: 4px 8px; color: var(--ts); font-size: 10px; letter-spacing: .08em; font-weight: 600; }
+  .cp .cph .chev { font-size: 9px; }
+  .cp .cph .cnt { color: #565e6e; font-weight: 400; }
+  .cp .cph .age { margin-left: auto; font-size: 9px; font-weight: 400; }
+  .cp .cph .age.stale { color: var(--amber); }
+
+  .cron { padding: 4px 8px 5px; border-top: 1px solid color-mix(in srgb, var(--border) 35%, transparent); }
+  .cron .l1 { display: flex; align-items: center; gap: 5px; }
+  .cron .nm { color: var(--tp); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cron .l2 { display: flex; align-items: center; gap: 6px; margin-top: 1px; font-size: 9.5px; color: var(--ts); }
+  .chip { font-size: 8.5px; padding: 0 4px; border-radius: 3px; border: 1px solid var(--border); color: var(--ts); white-space: nowrap; flex: none; }
+  .chip.role { border-color: color-mix(in srgb, var(--green) 55%, transparent); color: var(--green); }
+  .chip.sess { border-color: color-mix(in srgb, var(--blue) 55%, transparent); color: var(--blue); }
+  .chip.sched { border-color: color-mix(in srgb, var(--purple) 55%, transparent); color: var(--purple); }
+  .chip.orph { border-color: color-mix(in srgb, var(--amber) 60%, transparent); color: var(--amber); }
+  .cron .next { margin-left: auto; color: var(--tp); font-size: 9.5px; white-space: nowrap; }
+  .cron .next.due { color: var(--green); }
+  .cron.orphaned { opacity: .8; }
+  .cron.orphaned .nm { color: var(--amber); }
+  .warn { margin: 5px 8px 7px; padding: 4px 7px; border: 1px solid color-mix(in srgb, var(--amber) 55%, transparent); background: color-mix(in srgb, var(--amber) 9%, transparent); color: var(--amber); font-size: 9.5px; border-radius: 4px; line-height: 1.5; }
+
+  /* session tree */
+  .tree { border-top: 1px solid var(--border); padding: 4px 0 8px; }
+  .trh { padding: 3px 8px; color: var(--ts); font-size: 10px; letter-spacing: .08em; font-weight: 600; }
+  .row { display: flex; align-items: center; gap: 6px; min-height: 24px; padding: 0 8px 0 22px; color: var(--ts); position: relative; }
+  .row.sel { color: var(--tp); background: color-mix(in srgb, var(--amber) 28%, transparent); }
+  .row .dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+  .row .dot.wait { background: var(--yellow); }
+  .row .dot.idle { background: #6b7280; }
+  .row .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .eye { margin-left: auto; flex: none; color: var(--green); font-size: 10px; opacity: .9; }
+  .row .eye.dim { color: var(--ts); opacity: .45; }
+  .sess-h { padding: 2px 8px; color: var(--ts); font-weight: 600; }
+
+  /* flyout card */
+  .fly { width: 250px; background: var(--card); border: 1px solid var(--border); border-radius: 6px; font-family: var(--mono); font-size: 10.5px; box-shadow: 0 8px 28px rgba(0,0,0,.5); overflow: hidden; }
+  .fly .ft { padding: 6px 9px 2px; color: var(--tp); font-weight: 600; font-size: 11px; }
+  .fly .ff { padding: 0 9px 5px; color: var(--ts); font-size: 9.5px; border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent); }
+  .fly .fl { padding: 4px 9px; color: #b6bcc9; border-bottom: 1px solid color-mix(in srgb, var(--border) 35%, transparent); }
+  .fly .fl b { color: var(--tp); font-weight: 600; }
+  .fly .fl.watch { color: var(--green); }
+  .fly .fl.watch .why { color: var(--ts); }
+  .fly .fl.note { color: var(--ts); }
+  .fly .act { padding: 4px 9px; color: #b6bcc9; }
+  .fly .act:hover { background: color-mix(in srgb, var(--inset) 70%, transparent); color: var(--tp); }
+  .pair { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+  .conn { align-self: center; color: var(--ts); font-size: 18px; }
+
+  /* ---------- backoff timeline ---------- */
+  .tl { position: relative; height: 74px; margin: 18px 6px 4px; font-family: var(--mono); }
+  .tl .axis { position: absolute; left: 0; right: 0; top: 40px; height: 2px; background: var(--border); }
+  .tl .anchor { position: absolute; top: 18px; width: 2px; height: 32px; background: var(--blue); }
+  .tl .anchor .lab { position: absolute; top: -16px; left: -4px; font-size: 9.5px; color: var(--blue); white-space: nowrap; }
+  .tl .fire { position: absolute; top: 33px; width: 9px; height: 9px; border-radius: 50%; background: var(--green); border: 2px solid var(--bg); transform: translateX(-50%); }
+  .tl .fire .lab { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); font-size: 9px; color: var(--ts); white-space: nowrap; }
+  .tl .reset { position: absolute; top: 18px; width: 2px; height: 32px; background: var(--amber); }
+  .tl .reset .lab { position: absolute; top: -16px; left: -4px; font-size: 9.5px; color: var(--amber); white-space: nowrap; }
+  .legend { display: flex; gap: 16px; font-size: 10.5px; color: var(--ts); margin-top: 8px; flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+
+  /* ---------- resolution ladder ---------- */
+  .flow { font-family: var(--mono); font-size: 11px; line-height: 1.9; color: #b6bcc9; padding: 4px 6px; }
+  .flow .n { color: var(--tp); }
+  .flow .ok { color: var(--green); }
+  .flow .alt { color: var(--blue); }
+  .flow .bad { color: var(--amber); }
+  .flow .arr { color: #565e6e; }
+</style>
+</head>
+<body>
+
+<h1>Cron Clock — Design Studies</h1>
+<p class="sub">Visual design for <code>docs/specs/cron.md</code> — sidebar placement (the right panel is retired), entry anatomy, the idle-anchored backoff schedule, fire-time target resolution, and the watched-row overlay. All mocks are [target].</p>
+
+<h2>1 · Placement — a CLOCK sidebar section + watched rows in the tree</h2>
+<p>Crons and the watchlist are <b>server-scoped monitoring facts</b>, and the sidebar is run-kit's server-scoped monitoring surface (agent dots, markers, notes live there) — present on the terminal route, costing no navigation and no center real estate. The section-visibility rail is explicitly "the designated home for future sidebar-level controls": CLOCK joins it as a fifth toggle (default off), a standard <code>CollapsiblePanel</code>. The watchlist is deliberately <b>not a separate list</b> — watched workers are already window rows in the tree, so the operator's attention set renders as a row-level indicator, with detail on the row's existing flyout card.</p>
+
+<div class="study">
+  <span class="tag rec">recommended</span><span class="tag">sidebar · terminal route</span>
+  <div class="pair">
+    <div class="sidebar">
+      <div class="secrail">
+        <div class="sb">▤</div><div class="sb">⛁</div><div class="sb on">◷</div><div class="sb">▦</div><div class="sb">⌂</div>
+      </div>
+      <div class="cp">
+        <div class="cph"><span class="chev">▾</span> CLOCK <span class="cnt">· 3</span><span class="age">tick 42s</span></div>
+        <div class="cron">
+          <div class="l1"><span class="nm">operator tick</span><span class="chip role">role:op</span><span class="next">+4m</span></div>
+          <div class="l2"><span class="chip sched">backoff · rung 3</span><span>last 3m ✓</span></div>
+        </div>
+        <div class="cron">
+          <div class="l1"><span class="nm">hourly PR sweep</span><span class="chip sess">sess:4fe2</span><span class="next due">due</span></div>
+          <div class="l2"><span class="chip sched">every 1h</span><span>held (busy)</span></div>
+        </div>
+        <div class="cron orphaned">
+          <div class="l1"><span class="nm">nightly distill</span><span class="chip orph">orphaned 2d</span><span class="next">exp 5d</span></div>
+          <div class="l2"><span class="chip sched">cron 0 2 * * *</span><span>sess:9b0c gone</span></div>
+        </div>
+      </div>
+      <div class="tree">
+        <div class="trh">SESSIONS</div>
+        <div class="sess-h">▾ fabKit</div>
+        <div class="row sel"><span class="dot"></span><span class="nm">operator</span></div>
+        <div class="row"><span class="dot"></span><span class="nm">apply-tv3g</span><span class="eye">◉</span></div>
+        <div class="row"><span class="dot wait"></span><span class="nm">review-w7qc</span><span class="eye">◉</span></div>
+        <div class="row"><span class="dot idle"></span><span class="nm">ship-a8e4</span><span class="eye">◉</span></div>
+        <div class="row"><span class="dot idle"></span><span class="nm">scratch</span></div>
+      </div>
+    </div>
+    <div class="conn">⟶</div>
+    <div class="fly">
+      <div class="ft">Tab review-w7qc</div>
+      <div class="ff">window 3 · ~/code/…/swift-mink</div>
+      <div class="fl watch">◉ watched by operator <span class="why">· awaiting verdict 6m · tick 42s ago</span></div>
+      <div class="fl note">note: reviewing plan deltas (2h)</div>
+      <div class="act">Change color…</div>
+      <div class="act">Set note…</div>
+    </div>
+  </div>
+  <div class="cap"><b>Left</b>: the section rail gains a fifth toggle (◷); the CLOCK panel lists the active server's entries — name, target chip, live backoff rung, next fire; the held <code>when-idle</code> entry says why it hasn't fired; the orphaned entry stays visible with its expiry, never silently dropped. <b>Tree</b>: watched workers carry the ◉ indicator on their existing rows — no duplicate list (Constitution IV). <b>Right</b>: the row's existing flyout card gains one watched line with the operator's reason and the tick age — beside the note line that already lives there. Watched membership and the tick age derive from the fab operator state file (<code>monitored:</code> + <code>last_tick_at</code>, joined on pane ID) — nothing is pushed. Mute/delete ride the cron row's own flyout card (the sidebar's action-row idiom, not inline icons).</div>
+</div>
+
+<div class="grid" style="margin-top:18px">
+  <div class="study">
+    <span class="tag">staleness state</span>
+    <div class="sidebar" style="width:262px">
+      <div class="cp" style="border-top:none">
+        <div class="cph"><span class="chev">▾</span> CLOCK <span class="cnt">· 3</span><span class="age stale">tick 11m — stale</span></div>
+        <div class="warn">⚠ operator loop stale — backstop will deliver a tick; if this persists the operator may be dead</div>
+        <div class="cron">
+          <div class="l1"><span class="nm">operator tick</span><span class="chip role">role:op</span><span class="next due">firing</span></div>
+          <div class="l2"><span class="chip sched">backoff · rung 1</span><span>staleness crossed</span></div>
+        </div>
+      </div>
+      <div class="tree">
+        <div class="sess-h">▾ fabKit</div>
+        <div class="row"><span class="dot"></span><span class="nm">apply-tv3g</span><span class="eye dim">◉</span></div>
+        <div class="row"><span class="dot wait"></span><span class="nm">review-w7qc</span><span class="eye dim">◉</span></div>
+      </div>
+    </div>
+    <div class="cap"><b>One timestamp, two consumers.</b> The tick age in the CLOCK header is the same fact the pulse staleness alarm reads. Past the threshold: the header stamps <b>stale</b>, the warning strip renders, and the tree's ◉ indicators dim — the UI showing "watched (11m ago)" <i>is</i> the dead-loop alarm surfaced to the user.</div>
+  </div>
+  <div class="study">
+    <span class="tag bad">rejected</span><span class="tag">alternative placements</span>
+    <table style="margin-top:4px">
+      <tr><th>Placement</th><th>Why rejected</th></tr>
+      <tr><td>dedicated <code>clock</code> surface kind</td><td>The crons list alone never earns a tile, and the reserved <code>agents</code> kind already owns "agent fleet beside the work" — a second kind would split it. The tile-scale view is the full operator dashboard in the <code>agents</code> tile (§ 1b), not a clock tile.</td></tr>
+      <tr><td>Host page card</td><td>Checking crons must not cost a navigation away from the work. Host may later get a rollup count, nothing more (Constitution IV).</td></tr>
+      <tr><td>Status bar only</td><td>A readout with no management affordance; a next-tick chip may ride the status bar later, secondary to the section.</td></tr>
+      <tr><td>Separate watchlist list</td><td>Duplicates the session tree's rows — the tree already renders every watched worker with its state dot; only the operator's <i>attention</i> is new signal, and an indicator + card line carries it.</td></tr>
+    </table>
+  </div>
+</div>
+
+<h2>1b · The larger view — the operator dashboard in the <code>agents</code> tile</h2>
+<p>The sidebar glance can't show "what all the operator does" at desktop scale. The layout encoding already reserves an unbuilt <code>agents</code> surface kind (tty / code / web / <b>agents</b>) — specced as "the workers the pane spawned," and for the operator window its companions <i>are</i> the watched fleet. Landing that tile as the <b>operator dashboard</b> gives the large view with no new route and no new surface kind: open <code>main-left: tty,agents</code> from the shipped top-bar surface toggles, and the shipped <b>tile zoom</b> verb makes it momentarily full-center. The operator chat console <b>shipped</b> (#839, quake v2 #840) with the desktop input relocated to the <b>top-bar omnibox</b> (⌘J) under a one-input rule — so the tile carries <b>no compose of its own</b>: the omnibox is already the global talk channel, and the tile is the pure <i>see-what-it's-doing</i> half.</p>
+
+<div class="study">
+  <span class="tag rec">recommended · desktop</span><span class="tag">layout main-left: tty, agents</span>
+  <div style="display:grid; grid-template-columns: 1fr 1.1fr; gap:6px; border:1px solid var(--border); border-radius:6px; background:var(--bg); padding:6px; font-family:var(--mono); font-size:11px; min-height:330px">
+    <div style="border:1px solid var(--border); border-radius:4px; padding:8px 10px; color:#9aa3b2; line-height:1.6; background:var(--inset)">
+      <div style="color:var(--ts); font-size:9px; letter-spacing:.08em; margin-bottom:6px">TTY · operator</div>
+      <span style="color:var(--green)">❯</span> fab operator<br>
+      <span style="color:#565e6e">tick #142 · monitoring 3 workers</span><br>
+      <span style="color:#565e6e">apply-tv3g: 9/12 tasks, tests green</span><br>
+      <span style="color:#565e6e">review-w7qc: verdict pending 6m</span><br>
+      <span style="color:#565e6e">ship-a8e4: push rejected → escalated</span><br>
+      <span style="color:var(--green)">❯</span> <span style="color:#565e6e">▍</span>
+    </div>
+    <div style="border:1px solid var(--border); border-radius:4px; background:var(--card); display:flex; flex-direction:column; overflow:hidden">
+      <div style="display:flex; align-items:baseline; gap:8px; padding:6px 10px 5px; border-bottom:1px solid var(--border)">
+        <span style="font-size:10px; letter-spacing:.08em; font-weight:600">AGENTS · OPERATOR</span>
+        <span style="color:var(--ts); font-size:9px">fabKit · tick 42s ago</span>
+        <span style="margin-left:auto; color:var(--ts); font-size:9px">⤢ zoom</span>
+      </div>
+      <div style="padding:5px 10px 2px; font-size:9px; letter-spacing:.08em; color:var(--ts)">WATCHED · 3</div>
+      <div style="padding:3px 10px; display:flex; gap:7px; align-items:center; border-top:1px solid color-mix(in srgb,var(--border) 35%,transparent)"><span style="width:6px;height:6px;border-radius:50%;background:var(--green);flex:none"></span><span style="color:var(--tp)">apply-tv3g</span><span style="color:var(--ts);font-size:10px">busy · 9/12 tasks · rung 1</span><span style="margin-left:auto;color:var(--ts);font-size:9.5px">note: drafting PR (1h)</span></div>
+      <div style="padding:3px 10px; display:flex; gap:7px; align-items:center; border-top:1px solid color-mix(in srgb,var(--border) 35%,transparent)"><span style="width:6px;height:6px;border-radius:50%;background:var(--yellow);flex:none"></span><span style="color:var(--tp)">review-w7qc</span><span style="color:var(--ts);font-size:10px">awaiting verdict 6m · rung 2</span><span style="margin-left:auto;color:var(--ts);font-size:9.5px">will nudge +8m</span></div>
+      <div style="padding:3px 10px; display:flex; gap:7px; align-items:center; border-top:1px solid color-mix(in srgb,var(--border) 35%,transparent)"><span style="width:6px;height:6px;border-radius:50%;background:var(--red);flex:none"></span><span style="color:var(--tp)">ship-a8e4</span><span style="color:var(--ts);font-size:10px">push rejected · escalated</span><span style="margin-left:auto;color:var(--amber);font-size:9.5px">⚠ needs you</span></div>
+      <div style="padding:6px 10px 2px; font-size:9px; letter-spacing:.08em; color:var(--ts)">CRONS · 3</div>
+      <div style="padding:3px 10px; display:flex; gap:7px; align-items:center; border-top:1px solid color-mix(in srgb,var(--border) 35%,transparent)"><span style="color:var(--tp)">operator tick</span><span class="chip role">role:op</span><span class="chip sched">backoff · rung 3</span><span style="margin-left:auto;color:var(--tp);font-size:9.5px">+4m</span></div>
+      <div style="padding:3px 10px; display:flex; gap:7px; align-items:center; border-top:1px solid color-mix(in srgb,var(--border) 35%,transparent)"><span style="color:var(--tp)">hourly PR sweep</span><span class="chip sess">sess:4fe2</span><span class="chip sched">every 1h</span><span style="margin-left:auto;color:var(--green);font-size:9.5px">due · held (busy)</span></div>
+      <div style="padding:3px 10px; display:flex; gap:7px; align-items:center; border-top:1px solid color-mix(in srgb,var(--border) 35%,transparent); opacity:.75"><span style="color:var(--amber)">nightly distill</span><span class="chip orph">orphaned 2d</span><span style="margin-left:auto;color:var(--ts);font-size:9.5px">expires 5d · pin?</span></div>
+      <div style="padding:6px 10px 2px; font-size:9px; letter-spacing:.08em; color:var(--ts)">RECENT DELIVERIES</div>
+      <div style="padding:3px 10px 6px; color:var(--ts); font-size:9.5px; line-height:1.7; border-top:1px solid color-mix(in srgb,var(--border) 35%,transparent)">14:02 operator tick → delivered ✓ · 13:47 operator tick → delivered ✓ · 13:00 PR sweep → held→delivered ✓</div>
+      <div style="margin-top:auto; border-top:1px solid var(--border); padding:5px 10px; display:flex; gap:8px; align-items:center; color:#565e6e; font-size:9.5px">
+        <span>no compose — input is the top-bar omnibox (⌘J), one-input rule (#840)</span>
+      </div>
+    </div>
+  </div>
+  <div class="cap"><b>Left</b>: the operator's tty keeps the main slot. <b>Right</b>: the agents tile as operator dashboard — WATCHED with full detail (state, rung, what it awaits, the row's note), CRONS with live schedule state, RECENT DELIVERIES from the per-server log. No compose: the shipped console's one-input rule (#840) makes the top-bar omnibox the only desktop input, and the drawer/tile stay output-only. The escalated row's <b>⚠ needs you</b> is the console intake's "escalation badges" future-synergy, landed here. Zoom (⤢) makes this tile full-center — the largest view short of a board. <b>Immersion tier</b>: the operator can pin its watched windows to a <code>watched</code> board (link-based pinning, shipped) for a full-screen live-terminal view at <code>/board/watched</code> — a usage pattern, not a feature.</div>
+</div>
+
+<h2>1c · Mobile — a feed, not a registry</h2>
+<p>The desktop tiers collapse badly on a phone (a 50px drawer panel, flyout-buried mute). Mobile inverts the shape, borrowing from the software people already trust with timers: the <b>Calendar agenda</b> (a time-ordered feed, not a definitions list), the <b>alarm app</b> (one row = one entry with a first-class toggle; edit is its own screen), <b>healthchecks.io</b> (staleness — the dead-man's switch — is the primary status), and <b>PagerDuty</b> (push is the entry point; the app is where you land). The feed lives as an <b>Activity</b> segment on the shipped mobile console sheet — one phone home for <i>talk to the operator</i> and <i>what is its clock doing</i>.</p>
+
+<div class="grid">
+  <div class="study">
+    <span class="tag rec">recommended</span><span class="tag">mobile console sheet · Activity segment</span>
+    <div style="width:230px; border:1px solid var(--border); border-radius:10px; background:var(--bg); font-family:var(--mono); font-size:10.5px; overflow:hidden">
+      <div style="display:flex; align-items:center; gap:6px; padding:7px 10px; border-bottom:1px solid var(--border)">
+        <span style="color:var(--green)">◉</span><span style="color:var(--tp); font-weight:600; font-size:10px">OPERATOR · fabKit</span>
+        <span style="margin-left:auto; color:var(--ts)">✕</span>
+      </div>
+      <div style="display:flex; gap:4px; padding:6px 10px">
+        <span style="padding:2px 10px; border:1px solid var(--border); border-radius:4px; color:var(--ts); font-size:9.5px">Terminal</span>
+        <span style="padding:2px 10px; border:1px solid color-mix(in srgb,var(--green) 45%,transparent); border-radius:4px; color:var(--green); background:color-mix(in srgb,var(--green) 10%,transparent); font-size:9.5px">Activity</span>
+      </div>
+      <div style="margin:2px 10px 6px; padding:5px 8px; border:1px solid color-mix(in srgb,var(--amber) 55%,transparent); background:color-mix(in srgb,var(--amber) 9%,transparent); color:var(--amber); font-size:9.5px; border-radius:5px">⚠ operator loop stale · 11m — backstop armed</div>
+      <div style="padding:2px 10px; color:#565e6e; font-size:8.5px; letter-spacing:.08em">UPCOMING</div>
+      <div style="padding:5px 10px; display:flex; gap:7px; border-top:1px solid color-mix(in srgb,var(--border) 35%,transparent)"><span style="color:var(--green); flex:none">+4m</span><span style="color:var(--tp)">operator tick</span><span style="margin-left:auto; color:var(--ts); font-size:9px">rung 3 ›</span></div>
+      <div style="padding:5px 10px; display:flex; gap:7px; border-top:1px solid color-mix(in srgb,var(--border) 35%,transparent)"><span style="color:var(--green); flex:none">+38m</span><span style="color:var(--tp)">hourly PR sweep</span><span style="margin-left:auto; color:var(--ts); font-size:9px">held ›</span></div>
+      <div style="padding:5px 10px; display:flex; gap:7px; border-top:1px solid color-mix(in srgb,var(--border) 35%,transparent)"><span style="color:var(--ts); flex:none">02:00</span><span style="color:var(--amber)">nightly distill</span><span style="margin-left:auto; color:var(--amber); font-size:9px">orphaned ›</span></div>
+      <div style="padding:3px 10px; color:#565e6e; font-size:8.5px; letter-spacing:.08em; border-top:1px dashed var(--border)">EARLIER</div>
+      <div style="padding:5px 10px; display:flex; gap:7px; color:var(--ts); border-top:1px solid color-mix(in srgb,var(--border) 35%,transparent)"><span style="flex:none">12m</span><span>PR sweep → delivered ✓</span></div>
+      <div style="padding:5px 10px; display:flex; gap:7px; color:var(--ts); border-top:1px solid color-mix(in srgb,var(--border) 35%,transparent)"><span style="flex:none">15m</span><span>operator tick → delivered ✓</span></div>
+      <div style="border-top:1px solid var(--border); padding:6px 10px; color:#565e6e; font-size:9.5px">Message the operator…</div>
+    </div>
+    <div class="cap"><b>One scroll answers the phone question</b> — what's about to happen, what just happened. UPCOMING is computed (the evaluator's next-fire function), EARLIER is the delivery log: pure derivation, deterministic render. The staleness banner is pinned first (healthchecks' dead-man model). The compose strip stays — the sheet keeps mobile's one input. <code>rk notify</code> pushes (escalation, orphan, stale) deep-link here.</div>
+  </div>
+  <div class="study">
+    <span class="tag">entry detail sheet (tap a feed row)</span>
+    <div style="width:230px; border:1px solid var(--border); border-radius:10px; background:var(--card); font-family:var(--mono); font-size:10.5px; overflow:hidden">
+      <div style="padding:8px 12px 2px; color:var(--tp); font-weight:600">operator tick</div>
+      <div style="padding:0 12px 7px; color:var(--ts); font-size:9.5px">every 1m after idle, doubling to 30m</div>
+      <div style="display:flex; justify-content:space-between; padding:6px 12px; border-top:1px solid color-mix(in srgb,var(--border) 40%,transparent); color:var(--ts)"><span>target</span><span class="chip role">role:operator</span></div>
+      <div style="display:flex; justify-content:space-between; padding:6px 12px; border-top:1px solid color-mix(in srgb,var(--border) 40%,transparent); color:var(--ts)"><span>next / last</span><span style="color:var(--tp)">+4m · 15m ago ✓</span></div>
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:7px 12px; border-top:1px solid color-mix(in srgb,var(--border) 40%,transparent)"><span style="color:var(--tp)">Active</span><span style="width:30px; height:16px; border-radius:9px; background:color-mix(in srgb,var(--green) 55%,transparent); position:relative; display:inline-block"><i style="position:absolute; right:2px; top:2px; width:12px; height:12px; border-radius:50%; background:var(--tp)"></i></span></div>
+      <div style="padding:7px 12px; border-top:1px solid color-mix(in srgb,var(--border) 40%,transparent); color:var(--ts)">Pin entry</div>
+      <div style="padding:7px 12px; border-top:1px solid color-mix(in srgb,var(--border) 40%,transparent); color:var(--red)">Delete…</div>
+    </div>
+    <div class="cap"><b>The alarm-app anatomy</b>: plain-words schedule, the facts, and a first-class mute <b>toggle switch</b> — never a flyout card on coarse pointers. Delete confirms; pin marks an orphanable entry keep-forever. All ≥36px <code>coarse:</code> touch rows.</div>
+  </div>
+</div>
+
+<h2>2 · The backoff schedule — a pure function of the idle anchor</h2>
+<p>The operator tick is duration-based, not wall-clock: fire times are <code>anchor + min·(2ⁿ−1)</code> — +1m, +3m, +7m, +15m… capped at <code>max</code>. The anchor is the agent idle epoch carried by <code>@rk_pane_agent_state</code> — with the <b>anchor-join rule</b>: the effective anchor is the last activity <i>not caused by the clock</i> (idle-epoch resets that immediately follow the clock's own delivery are ignored, by joining against the delivery log). Without the join every delivered tick would reset the raw epoch and pin the ladder at rung 1 forever. <b>No stored counters</b>: both inputs live on disk, a daemon restart re-derives the whole schedule, worst case one duplicate idempotent tick. The entry also carries <code>wake_on: agent-state-change</code> (debounced edge trigger, OR'd in) and <code>suppress_while: [operator-loop-fresh, nothing-tracked]</code> — silent while the in-session /loop is alive or nothing is monitored.</p>
+
+<div class="study">
+  <span class="tag rec">schedule: backoff · min 60s · max 30m</span>
+  <div class="tl">
+    <div class="axis"></div>
+    <div class="anchor" style="left:4%"><span class="lab">idle epoch (anchor)</span></div>
+    <div class="fire" style="left:12%"><span class="lab">+1m</span></div>
+    <div class="fire" style="left:24%"><span class="lab">+3m</span></div>
+    <div class="fire" style="left:40%"><span class="lab">+7m</span></div>
+    <div class="fire" style="left:56%"><span class="lab">+15m</span></div>
+    <div class="reset" style="left:66%"><span class="lab">activity → anchor resets</span></div>
+    <div class="fire" style="left:74%"><span class="lab">+1m</span></div>
+    <div class="fire" style="left:86%"><span class="lab">+3m</span></div>
+  </div>
+  <div class="legend">
+    <span><i style="background:var(--blue)"></i>derived anchor (idle epoch)</span>
+    <span><i style="background:var(--green)"></i>fire (tick delivered)</span>
+    <span><i style="background:var(--amber)"></i>agent activity — ladder restarts</span>
+  </div>
+  <div class="cap"><b>Stateless by construction</b>: the fire sequence is deterministic from the anchor, so nothing can go stale — the failure mode that motivated the fab pulse plan's attempts-counter sidecar simply doesn't exist here. The CLOCK row's schedule chip renders the live rung: <code>backoff · rung 3</code>.</div>
+</div>
+
+<h2>3 · Fire-time target resolution</h2>
+<p>Entries name durable identities; panes are found at fire time. This is what "kill the operator and the cron continues" means mechanically.</p>
+
+<div class="grid">
+  <div class="study">
+    <span class="tag rec">resolution ladder</span>
+    <div class="flow">
+      <span class="n">fire(entry)</span><br>
+      <span class="arr">├─</span> target <span class="ok">role:operator</span> <span class="arr">→</span> pane holding role option <span class="arr">→</span> <span class="ok">deliver</span><br>
+      <span class="arr">├─</span> target <span class="alt">sess:4fe2</span> <span class="arr">→</span> pane with <span class="n">@rk_pane_agent_session=4fe2</span> <span class="arr">→</span> <span class="ok">deliver</span><br>
+      <span class="arr">└─</span> no pane resolves <span class="arr">→</span> <span class="bad">if_absent</span>:<br>
+      <span class="arr">&nbsp;&nbsp;&nbsp;├─</span> <span class="n">skip</span> <span class="arr">→</span> missed fire logged · trends orphaned<br>
+      <span class="arr">&nbsp;&nbsp;&nbsp;├─</span> <span class="n">notify</span> <span class="arr">→</span> rk notify (fail-silent)<br>
+      <span class="arr">&nbsp;&nbsp;&nbsp;└─</span> <span class="n">respawn</span> <span class="arr">→</span> role: <span class="ok">rk operator</span> relaunch<br>
+      <span class="arr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> sess: <span class="alt">claude --resume</span> <span class="tag p3" style="margin:0">P3</span>
+    </div>
+    <div class="cap"><b>Delivery rides the one injection engine</b> (the communication standard's write channel, <code>agent-messaging.md</code>) — pane-mode guard, echo probe, and submit verification inherited, never raw send-keys. <code>when-idle</code> entries additionally gate on <code>@rk_pane_agent_state</code>. A respawn runs the standard spawn-then-deliver composite: <code>await --ready</code> classifies the fresh pane, a <code>parked</code> wall escalates via notify (the clock never auto-answers walls), delivery proceeds only on <code>ready</code> — and the first delivery is the launcher's kickoff (<code>/fab-operator</code>), never the bare tick: a fresh session has no tick convention in context.</div>
+  </div>
+  <div class="study">
+    <span class="tag">target kinds × lifetime</span>
+    <table>
+      <tr><th>Kind</th><th>Chip</th><th>Survives</th><th>Orphans</th></tr>
+      <tr><td><code>role</code></td><td><span class="chip role">role:op</span></td><td>any pane/agent death — the role outlives both</td><td>never</td></tr>
+      <tr><td><code>session</code></td><td><span class="chip sess">sess:4fe2</span></td><td>pane moves; resumable after death (P3)</td><td>when no pane resolves → TTL 7d unless pinned</td></tr>
+      <tr><td><code>pane</code></td><td><span class="chip">pane:%31</span></td><td>nothing — scripts only</td><td>with the pane</td></tr>
+    </table>
+    <div class="cap"><b>Creator auto-capture</b>: <code>rk cron add</code> inside a pane derives the caller's session + role from <code>$TMUX_PANE</code>, so "the agent that uses it becomes the target" needs no arguments. Agent-created entries default unpinned — dead agents cannot leave immortal crons.</div>
+  </div>
+</div>
+
+<h2>4 · Interaction inventory</h2>
+<table>
+  <tr><th>Action</th><th>Surface</th><th>Palette (Constitution V)</th></tr>
+  <tr><td>Show/hide CLOCK section</td><td>section-rail ◷ toggle</td><td><code>Panel: Toggle Clock</code></td></tr>
+  <tr><td>New entry</td><td><code>rk cron add</code> · palette</td><td><code>Cron: new entry</code></td></tr>
+  <tr><td>Mute / unmute</td><td>cron row flyout card row</td><td><code>Cron: mute…</code></td></tr>
+  <tr><td>Delete</td><td>cron row flyout card row (confirm)</td><td><code>Cron: delete…</code></td></tr>
+  <tr><td>Pin orphan</td><td>orphan row flyout card row</td><td><code>Cron: pin…</code></td></tr>
+  <tr><td>Watched detail</td><td>window row flyout card line</td><td>—</td></tr>
+</table>
+<p style="margin-top:10px">Mutations are POST-only (<code>/api/cron/create·delete·mute</code>) and each handler wakes the SSE hub explicitly — file writes emit no tmux event, so without the wake the panel lags the 12s safety poll. Row actions follow the sidebar's flyout-card action-row idiom (no inline icon clusters), coarse pointers reach the cards through the status rail like every other tier.</p>
+
+</body>
+</html>

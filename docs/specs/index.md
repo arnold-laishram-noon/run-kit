@@ -26,6 +26,7 @@
 | [Agent State](agent-state.md) | The `@rk_pane_agent_state` pane-option convention — two-tier ownership, value schema, writer/reader rules, shell reconciler, and the `rk agent setup` per-agent hook registry (cross-repo contract with fab-kit) |
 | [API](api.md) | HTTP, SSE, and WebSocket endpoint specification — the target API surface |
 | [Architecture](architecture.md) | System architecture, repository structure, data flow, build & deploy |
+| [Cron](cron.md) | rk-owned clock substrate — server-scoped cron entries fired into agents resolved at delivery time (role/session targets), idle-anchored backoff for the operator tick, orphan GC, the sidebar `CLOCK` section + watched-row overlay, and the operator watchlist seam |
 | [Code Bridge](code-bridge.md) | `rk code exec` + the `rk-code-bridge` code-server extension — run VS Code palette commands in the `code` lens from a shell over a same-user Unix socket under `$XDG_STATE_HOME/run-kit/cb/`; protocol, host resolution, security stance, distribution via `rk code-server install`, phasing |
 | [CLI Layering](cli-layering.md) | Two-tool model — rk owns the tmux/agent substrate, fab owns pipeline choreography: delegation rules, the `rk mux`/`rk agent` grouping plan, hidden plumbing, the `fab pane` migration map, and the 8-part phased execution plan |
 | [Project Plan](project-plan.md) | 4-phase reimplementation plan: scaffold → backend → frontend → cleanup |
@@ -42,6 +43,7 @@
 
 | Page | Description |
 |------|-------------|
+| [Cron Clock Design Studies](../wiki/cron-clock-design-studies.html) | HTML design study for the [Cron](cron.md) spec [target] — the tiered UI (desktop: sidebar CLOCK section + watched-row overlay · operator dashboard in the reserved `agents` tile, output-only per the console's one-input rule · `watched` board immersion; mobile: the console sheet's Activity feed + staleness banner + entry detail sheet), the idle-anchored backoff timeline, the fire-time target-resolution ladder, and rejected placements with rationale. Self-contained; open in a browser |
 | [Competitive Landscape](../wiki/competitive-landscape.md) | Where run-kit sits among tmux dashboards, agent orchestrators, mobile clients, and server consoles — the two-lineages positioning and closest competitors |
 | [Label Picker Design Studies](../wiki/label-picker-design-studies.html) | Interactive HTML design reference behind the 5-marker vocabulary, shade axis, paired-grid picker, and row textures (260723-wwoi + #452) — live OKLCH-derived swatches, the final pairing table, and the tried-and-rejected treatment gallery with rationale. Self-contained; open in a browser |
 | [Picker Layout Studies](../wiki/picker-layout-studies.html) | Interactive HTML design study behind the banded B-H Label picker rework (260819-9hh6) — the four layout approaches (A/C/D parked, B-H chosen), the −-in-headers iteration (clear-cell glyph: ∅ → neutral minus, red rejected — the glyph-comparison strip), the 8-marker categorical vocabulary with the hatch↔hazard pairing, and the marker/flair motion split (rain/scan as flairs), every mock live with the shipped flair CSS. Self-contained; open in a browser |
