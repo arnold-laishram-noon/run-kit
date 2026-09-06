@@ -1,0 +1,57 @@
+id: 3jtn
+name: 260906-3jtn-cron-core-evaluator
+created: 2026-09-06T16:40:18Z
+created_by: sahil-noon
+change_type: feat
+issues: []
+progress:
+    intake: done
+    apply: done
+    review: done
+    hydrate: done
+    ship: done
+    review-pr: done
+plan:
+    generated: true
+    task_count: 12
+    acceptance_count: 25
+    acceptance_completed: 25
+confidence:
+    certain: 5
+    confident: 5
+    tentative: 0
+    unresolved: 0
+    score: 3.9
+    fuzzy: true
+    dimensions:
+        signal: 72.5
+        reversibility: 78.5
+        competence: 79.0
+        disambiguation: 72.5
+stage_metrics:
+    intake: {started_at: "2026-09-06T16:40:18Z", driver: fab-new, iterations: 1, completed_at: "2026-09-06T16:46:33Z"}
+    apply: {started_at: "2026-09-06T16:46:33Z", driver: fab-fff, iterations: 1, completed_at: "2026-09-06T17:13:44Z"}
+    review: {started_at: "2026-09-06T17:13:44Z", driver: fab-fff, iterations: 1, completed_at: "2026-09-06T17:18:11Z"}
+    hydrate: {started_at: "2026-09-06T17:18:11Z", driver: fab-fff, iterations: 1, completed_at: "2026-09-06T17:22:07Z"}
+    ship: {started_at: "2026-09-06T17:22:07Z", driver: fab-fff, iterations: 1, completed_at: "2026-09-06T17:23:25Z"}
+    review-pr: {started_at: "2026-09-06T17:23:25Z", driver: git-pr, iterations: 1, completed_at: "2026-09-06T17:29:41Z"}
+prs:
+    - https://github.com/sahil87/run-kit/pull/855
+change_type_source: explicit
+true_impact:
+    added: 4271
+    deleted: 1
+    net: 4270
+    excluding:
+        added: 3650
+        deleted: 0
+        net: 3650
+    tests:
+        added: 2011
+        deleted: 0
+        net: 2011
+    computed_at: "2026-09-06T17:23:25Z"
+    computed_at_stage: ship
+summary: 'landed internal/cron core + evaluator: entry schema + tolerant load, stateless evaluator (anchor-join backoff, wake_on poll approximation, suppress_while guards), delivery log, tick guards, Deliverer seam'
+# true_impact: lazily created on first stage-finish that computes it (no placeholder here).
+last_updated: 2026-09-06T17:29:41Z
