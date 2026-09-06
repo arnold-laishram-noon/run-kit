@@ -372,6 +372,10 @@ tmux event — the safety-poll lesson).
 
 ## Phasing
 
+> Execution shape — change breakdown, waves, the P1.5 gate, and the fab-kit
+> item — lives in
+> [`fab/plans/sahil/26-09-06-cron-clock-plan.md`](../../fab/plans/sahil/26-09-06-cron-clock-plan.md).
+
 - **P1 — substrate + operator tick**: the evaluator verb + daemon-ticker
   invoker + flock, entry file, `role` target, `backoff` (with the anchor-join)
   + `every` schedules, `wake_on` + `suppress_while`, injection-engine
