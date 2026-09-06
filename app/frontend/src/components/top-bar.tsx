@@ -26,6 +26,8 @@ import {
   OperatorConsoleMenuRow,
   type OverflowMenuRow,
   type MenuGroup,
+} from "@/components/top-bar-overflow-menu";
+import {
   MENU_ROW_CLASS,
   MENU_ROW_KBD_CLASS,
   POPOVER_ROW_CLASS,
@@ -34,7 +36,7 @@ import {
   TOP_BAR_BUTTON_REST,
   TOP_BAR_BUTTON_H,
   TOP_BAR_SEGMENT_H,
-} from "@/components/top-bar-overflow-menu";
+} from "@/components/controls";
 import { GearIcon, HeadsetIcon } from "@/components/sidebar/icons";
 import { useSettingsDialog } from "@/contexts/settings-dialog-context";
 import {
@@ -1157,9 +1159,15 @@ export function TopBar({
           >
             {/* Brand root crumb — logo + wordmark, links to `/`. The nav's
                 first child (the breadcrumb's root — the `›` separator starts
-                after it); IS the home affordance (no separate "Host" crumb).
-                Wordmark collapses to the bare icon below `sm` so long crumbs
-                still fit the single-line 375px topbar. */}
+                after it); IS the home affordance ON ≥sm (no separate "Host"
+                crumb). Below `sm` the whole crumb is gone (the `hidden
+                sm:contents` wrapper — a wrapper, not classes on the anchor,
+                because `hidden` and CRUMB_BOX's `inline-flex` are conflicting
+                display utilities whose winner would depend on stylesheet
+                order): on phones the brand + home affordance live in the
+                sidebar's brand row instead (SidebarBrand), so the left cluster
+                spends its scarce 375px width on crumbs that navigate. */}
+            <span className="hidden sm:contents">
             <Tip label="Host">
             <a
               href="/"
@@ -1175,9 +1183,10 @@ export function TopBar({
                   text-decoration does not propagate into flex items, so an
                   underline-based LINK_CRUMB_CLASS would silently skip the
                   wordmark without it. No-op for non-underline variants. */}
-              <span className="hidden sm:inline text-xs [text-decoration:inherit]">RunKit</span>
+              <span className="text-xs [text-decoration:inherit]">RunKit</span>
             </a>
             </Tip>
+            </span>
 
             {mode === "board" ? (
               // Board mode keeps ONLY the counts/hint on the left (move-don't-copy,
@@ -2610,7 +2619,7 @@ function BoardAutofitToggle({
 // what clicking the icon button does — so bar↔menu behavior can never drift.
 
 // `MENU_ROW_CLASS` (and its decomposed `MENU_ROW_BASE`/`_REST`/`_DISABLED`/
-// `_ACTIVE` variants) are hosted in `top-bar-overflow-menu.tsx` and imported at
+// `_ACTIVE` variants) are hosted in `controls.ts` and imported at
 // the top of this file so the row styling stays shared (mirrors
 // BreadcrumbDropdown's item classes).
 

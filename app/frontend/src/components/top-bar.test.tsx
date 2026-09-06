@@ -403,9 +403,13 @@ describe("TopBar", () => {
     const brand = screen.getByLabelText("RunKit home");
     expect(brand.tagName).toBe("A");
     expect(brand).toHaveAttribute("href", "/");
-    // The brand is the FIRST element inside the breadcrumb nav.
+    // The brand sits inside the nav's FIRST element child \u2014 the `hidden
+    // sm:contents` breakpoint wrapper that removes the whole crumb on phones
+    // (the sidebar brand row is the home affordance there). `contents` keeps
+    // the anchor a flex item of the nav at sm+, so root-crumb position holds.
     const nav = container.querySelector('nav[aria-label="Breadcrumb"]')!;
-    expect(nav.firstElementChild).toBe(brand);
+    expect(nav.firstElementChild).toContainElement(brand);
+    expect(nav.firstElementChild!.className).toContain("sm:contents");
     // There is exactly ONE anchor to "/" (the left brand) \u2014 the old right-side
     // RunKit anchor is gone.
     const homeAnchors = Array.from(container.querySelectorAll('a[href="/"]'));
@@ -426,13 +430,13 @@ describe("TopBar", () => {
     expect(
       Boolean(hamburger.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING),
     ).toBe(true);
-    // The toggle carries the shared FIXED-size token (260731-oiho): 28px fine /
-    // 30px coarse squares — fixed `w/h`, not the old `min-*` floors that let
+    // The toggle carries the shared FIXED-size token: 28px fine /
+    // 40px coarse squares — fixed `w/h`, not the old `min-*` floors that let
     // rendered sizes drift with content.
     expect(hamburger.className).toContain("w-[28px]");
     expect(hamburger.className).toContain("h-[28px]");
-    expect(hamburger.className).toContain("coarse:w-[30px]");
-    expect(hamburger.className).toContain("coarse:h-[30px]");
+    expect(hamburger.className).toContain("coarse:w-[40px]");
+    expect(hamburger.className).toContain("coarse:h-[40px]");
     expect(hamburger.className).not.toContain("min-w-[24px]");
   });
 
@@ -510,7 +514,7 @@ describe("TopBar", () => {
     // The gear is the standard chip idiom (rk-glint + fixed-size border token).
     expect(gear.className).toContain("rk-glint");
     expect(gear.className).toContain("w-[28px]");
-    expect(gear.className).toContain("coarse:w-[30px]");
+    expect(gear.className).toContain("coarse:w-[40px]");
     // Theme/Help render NOWHERE in the bar or probe (menuOnly rows) — and the
     // bell is gone entirely. (The menu itself mounts only when open.)
     expect(screen.queryByLabelText(/Notifications/)).not.toBeInTheDocument();
