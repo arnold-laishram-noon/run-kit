@@ -134,6 +134,35 @@ func Add(dir, slug string, e Entry) (Entry, error) {
 	return e, nil
 }
 
+// EnsureRoleEntry seeds a role-target entry if this server has none yet. It
+// scans the existing entries for a Target{Kind: TargetRole, Role:
+// spec.Target.Role} match; a hit is a no-op (returns the existing entry,
+// created=false); a miss calls Add with spec (created=true). Existing entries
+// are never mutated — re-seeding after a manual edit (e.g. a user changed the
+// backoff bounds or muted the entry) leaves the user's edit alone: the role
+// target is the idempotency key, not any field value.
+func EnsureRoleEntry(dir, slug string, spec Entry) (entry Entry, created bool, err error) {
+	// The (kind, role) pair is the idempotency key: a mistargeted spec must
+	// fail loudly, never plant a non-role entry the scan can never match.
+	if spec.Target.Kind != TargetRole || spec.Target.Role == "" {
+		return Entry{}, false, fmt.Errorf("EnsureRoleEntry requires a role target with a non-empty role, got kind %q role %q", spec.Target.Kind, spec.Target.Role)
+	}
+	_, entries, err := loadForMutate(dir, slug)
+	if err != nil {
+		return Entry{}, false, err
+	}
+	for _, e := range entries {
+		if e.Target.Kind == TargetRole && e.Target.Role == spec.Target.Role {
+			return e, false, nil
+		}
+	}
+	entry, err = Add(dir, slug, spec)
+	if err != nil {
+		return Entry{}, false, err
+	}
+	return entry, true, nil
+}
+
 // Remove deletes the entry with the given id. Returns false when absent.
 func Remove(dir, slug, id string) (bool, error) {
 	path, entries, err := loadForMutate(dir, slug)
