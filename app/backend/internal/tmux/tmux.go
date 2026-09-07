@@ -799,11 +799,13 @@ type WindowInfo struct {
 	// CodeRoot is the absolute folder the code surface opens, sourced from
 	// CodeRootOption. "" when unset.
 	CodeRoot string `json:"codeRoot,omitempty"`
-	// GitRoot is the git toplevel derived from the window's active-pane cwd
-	// (config.FindGitRoot — a filesystem walk, no subprocess), computed rk-side
-	// in FetchSessions. Empty when the cwd is not inside a git repo. It keys
-	// the code lens/surface availability (docs/specs/right-panel.md) — editor
-	// state follows the code, so it is keyed by git ROOT, never window id.
+	// GitRoot is the resolved code folder derived from the window's active-pane
+	// cwd (config.FindGitRoot — a filesystem walk, no subprocess), computed
+	// rk-side in FetchSessions: the git toplevel when the cwd sits in a repo,
+	// the raw cwd itself when outside any repo, and empty only when no cwd is
+	// resolvable at all. It keys the code lens/surface availability
+	// (docs/specs/right-panel.md) — editor state follows the code, so it is
+	// keyed by the resolved folder, never window id.
 	GitRoot string `json:"gitRoot,omitempty"`
 	// Marker is the window's left-gutter marker state, sourced from the
 	// @rk_win_marker window user option as a `<mode>[:<stage>]` token. It is an
