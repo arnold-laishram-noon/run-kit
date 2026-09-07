@@ -170,7 +170,7 @@ export const CONSOLE_WIDTH_MIN_PX = 420;
 export const CONSOLE_WIDTH_MAX_VW = 0.96;
 
 export const CONSOLE_OPACITY_DEFAULT = 0.9;
-export const CONSOLE_OPACITY_MIN = 0.75;
+export const CONSOLE_OPACITY_MIN = 0.5;
 export const CONSOLE_OPACITY_MAX = 1.0;
 
 function viewportWidthPx(): number | undefined {
@@ -190,7 +190,7 @@ export function clampConsoleGeometry(
   return { heightVh, widthPx: Math.round(widthPx) };
 }
 
-/** Clamp opacity into the supported envelope (0.75–1.0). */
+/** Clamp opacity into the supported envelope (0.5–1.0). */
 export function clampConsoleOpacity(opacity: number): number {
   return Math.min(CONSOLE_OPACITY_MAX, Math.max(CONSOLE_OPACITY_MIN, opacity));
 }
@@ -330,11 +330,23 @@ export type ConsoleMachineState = "rest" | "focused" | "open";
 let machineState: ConsoleMachineState = "rest";
 const machineListeners = new Set<(state: ConsoleMachineState) => void>();
 
+/** Bumped on every `setConsoleMachineState` call, including a same-value
+ *  no-op — the outside-click-collapse effect's "did anything else already
+ *  claim this click" signal (a value-equality check alone would miss a
+ *  legitimate same-value re-open, e.g. a sidebar retarget while already
+ *  `open`). */
+let machineActivity = 0;
+
 export function getConsoleMachineState(): ConsoleMachineState {
   return machineState;
 }
 
+export function getConsoleMachineActivity(): number {
+  return machineActivity;
+}
+
 export function setConsoleMachineState(next: ConsoleMachineState): void {
+  machineActivity++;
   if (machineState === next) return;
   machineState = next;
   for (const listener of machineListeners) listener(next);
