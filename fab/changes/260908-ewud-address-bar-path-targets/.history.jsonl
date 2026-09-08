@@ -1,0 +1,3 @@
+{"action":"enter","driver":"fab-new","event":"stage-transition","stage":"intake","ts":"2026-09-08T10:41:02Z"}
+{"args":"web pane address bar defaults path-shaped input to present targets (paste relative path from code-server, it just works)","cmd":"fab-new","event":"command","ts":"2026-09-08T10:41:02Z"}
+{"delta":"+4.7","event":"confidence","score":4.7,"trigger":"calc-score","ts":"2026-09-08T10:41:52Z"}

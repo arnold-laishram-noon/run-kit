@@ -1,0 +1,3 @@
+{"action":"enter","driver":"fab-new","event":"stage-transition","stage":"intake","ts":"2026-09-08T10:30:09Z"}
+{"args":"viewer shell rendering for .md and .excalidraw present targets (read-only)","cmd":"fab-new","event":"command","ts":"2026-09-08T10:30:09Z"}
+{"delta":"+4.2","event":"confidence","score":4.2,"trigger":"calc-score","ts":"2026-09-08T10:31:48Z"}
