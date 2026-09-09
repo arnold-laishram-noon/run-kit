@@ -1,5 +1,6 @@
 # Archived Changes
 
+- **260909-5nvd-gui-spec-and-registry-rename** — GUI Spec Amendments + Registry Rename (`desktop` → `gui`)
 - **260909-3cp9-pane-split-wedge-sizing-guard** — Pane-split tmux wedge — multi-viewer sizing guard (`window-size smallest`)
 - **260907-yxen-mobile-cron-activity-feed** — Mobile Cron UI — Activity Feed, Entry Detail Sheet, Notify Deep-Links
 - **260907-wuiu-clock-sidebar-section** — Desktop UI: CLOCK Sidebar Section
