@@ -77,21 +77,29 @@ func TestDeriveEntryEvery(t *testing.T) {
 	}
 }
 
-// TestDeriveEntryCronKindNeverFabricates: a cron-kind (5-field expression)
-// entry reports no next-fire (unevaluated this wave), never a fabricated time.
-func TestDeriveEntryCronKindNeverFabricates(t *testing.T) {
+// TestDeriveEntryCronKindNextFire: a cron-kind entry reports its next
+// occurrence after now as next-fire; an unparseable expression keeps
+// HasNextFire false — never a fabricated time.
+func TestDeriveEntryCronKindNextFire(t *testing.T) {
 	e := Entry{
 		ID:       "a3f9",
-		Schedule: Schedule{Kind: ScheduleCron, Expr: "0 3 * * *"},
+		Schedule: Schedule{Kind: ScheduleCron, Expr: "0 9 * * *"},
 		Target:   Target{Kind: TargetRole, Role: RoleOperator},
 	}
 	facts := TargetFacts{PaneID: "%5", AgentState: "idle", StateEpoch: backoffBase.Unix()}
-	d := DeriveEntry(e, own(backoffBase.Unix()), facts, backoffBase)
-	if d.HasNextFire || !d.NextFire.IsZero() {
-		t.Errorf("cron-kind NextFire = %v (has %v), want none", d.NextFire, d.HasNextFire)
+	now := localTime(2026, 9, 9, 10, 0, 0)
+	d := DeriveEntry(e, own(backoffBase.Unix()), facts, now)
+	if !d.HasNextFire || !d.NextFire.Equal(localTime(2026, 9, 10, 9, 0, 0)) {
+		t.Errorf("cron-kind NextFire = %v (has %v), want tomorrow 09:00 local", d.NextFire, d.HasNextFire)
 	}
 	if d.Rung != 0 {
 		t.Errorf("cron-kind Rung = %d, want 0", d.Rung)
+	}
+
+	e.Schedule.Expr = "not an expr"
+	d = DeriveEntry(e, own(backoffBase.Unix()), facts, now)
+	if d.HasNextFire || !d.NextFire.IsZero() {
+		t.Errorf("unparseable NextFire = %v (has %v), want none", d.NextFire, d.HasNextFire)
 	}
 }
 
@@ -142,6 +150,27 @@ func TestDeriveEntryOrphanStreak(t *testing.T) {
 	d = DeriveEntry(role, log, unresolved, T)
 	if d.OrphanedSince != 0 || d.ExpiresAt != 0 {
 		t.Errorf("role entry OrphanedSince/ExpiresAt = %d/%d, want 0/0", d.OrphanedSince, d.ExpiresAt)
+	}
+}
+
+// TestDeriveEntryCronKindDueNow: an occurrence inside its due window projects
+// as the (past) occurrence itself — past next-fire means due now, the
+// DerivedEntry contract — and a stale occurrence past its window (missed, no
+// catch-up) projects the next future occurrence.
+func TestDeriveEntryCronKindDueNow(t *testing.T) {
+	facts := TargetFacts{PaneID: "%5", AgentState: "idle", StateEpoch: backoffBase.Unix()}
+	anchor := localTime(2026, 9, 9, 10, 0, 30)
+	log := own(anchor.Unix())
+
+	e := cronEntry("*/5 * * * *", "", "", anchor)
+	d := DeriveEntry(e, log, facts, localTime(2026, 9, 9, 10, 5, 20))
+	if want := localTime(2026, 9, 9, 10, 5, 0); !d.HasNextFire || !d.NextFire.Equal(want) {
+		t.Errorf("due-now NextFire = %v (has %v), want the due occurrence %v", d.NextFire, d.HasNextFire, want)
+	}
+
+	d = DeriveEntry(e, log, facts, localTime(2026, 9, 9, 10, 9, 0))
+	if want := localTime(2026, 9, 9, 10, 10, 0); !d.HasNextFire || !d.NextFire.Equal(want) {
+		t.Errorf("missed NextFire = %v (has %v), want the next future occurrence %v", d.NextFire, d.HasNextFire, want)
 	}
 }
 
