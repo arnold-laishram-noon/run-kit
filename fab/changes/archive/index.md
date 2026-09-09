@@ -1,5 +1,6 @@
 # Archived Changes
 
+- **260909-3cp9-pane-split-wedge-sizing-guard** — Pane-split tmux wedge — multi-viewer sizing guard (`window-size smallest`)
 - **260907-yxen-mobile-cron-activity-feed** — Mobile Cron UI — Activity Feed, Entry Detail Sheet, Notify Deep-Links
 - **260907-wuiu-clock-sidebar-section** — Desktop UI: CLOCK Sidebar Section
 - **260907-1jm6-cron-api-derivations** — Cron API + Derivations (watchlist + staleness onto sessions)
