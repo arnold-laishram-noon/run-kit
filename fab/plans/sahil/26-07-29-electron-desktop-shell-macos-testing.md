@@ -1,3 +1,4 @@
+hll update
 # macOS Test Brief — Electron Desktop Viewer Shell (PR #462)
 
 > **Audience**: an agent running on the user's Mac (Claude Code or similar) with shell access.
