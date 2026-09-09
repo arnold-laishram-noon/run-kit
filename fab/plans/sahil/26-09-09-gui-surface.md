@@ -45,7 +45,7 @@ Agents: fill your row when you create the change; mark Done when merged.
 
 | # | Slug (suggested) | Depends on | Size | Change folder | PR | Status |
 |---|------------------|-----------|------|---------------|----|--------|
-| C0 | *(spike — no fab change; written verdict only)* | — | S | — | — | not started |
+| C0 | *(spike — no fab change; written verdict only)* | — | S | — | — | **Done 2026-09-09** — see § C0 verdict |
 | C1 | `gui-spec-and-registry-rename` | — | S | 260909-5nvd-gui-spec-and-registry-rename | https://github.com/sahil87/run-kit/pull/888 | Done |
 | C2 | `gui-backend-switch-and-relay` | C0 verdict, C1 | L | | | not started |
 | C3 | `gui-surface-tile` | C2 merged | L | | | not started |
@@ -331,4 +331,166 @@ re-run shows the delta.
 
 ## C0 verdict
 
-*(empty — appended by whoever runs the spike)*
+> Appended 2026-09-09 by the spike agent (worktree `bold-anole`, this VM:
+> `dev-ws-sahil01`, Ubuntu 22.04, 16 vCPU, no GPU). Nothing merged, no fab
+> change. Both stacks were left running for hands-on judging — see § Hands-on.
+
+**Verdict: Xvnc stands. C2's Linux default backend (D5) is TigerVNC `Xtigervnc`
++ stock noVNC canvas; KasmVNC stays the C6 upgrade lane gated on C5.**
+
+**Hands-on pass (2026-09-09, Sahil, from India over Tailscale, ~270 ms RTT to
+this VM): Xvnc + noVNC felt better than KasmVNC side by side.** The reopen
+clause below is therefore closed; D5 is final for C2.
+
+### What was run
+
+| | Xvnc lane | Kasm lane |
+|---|---|---|
+| Server | TigerVNC 1.12 `Xtigervnc :10 -rfbunixpath …/host.sock -SecurityTypes None -AlwaysShared -AcceptSetDesktopSize -geometry 1920x1080 -FrameRate=60` + openbox | KasmVNC 1.5.0 jammy deb, `Xkasmvnc :11 -websocketPort 6901 -interface 127.0.0.1 -DisableBasicAuth 1 -sslOnly 0 -httpd /usr/share/kasmvnc/www -SecurityTypes None -AlwaysShared -AcceptSetDesktopSize -FrameRate 60 -geometry 1920x1080` + openbox |
+| Client path | websockify (`--unix-target`) on :6081 serving noVNC 1.7.0 (git `v1.7.0`), reached at `/proxy/6081/…` | Kasm's embedded HTTP+WS server, reached at `/proxy/6901/index.html?autoconnect=1&path=proxy/6901/websockify` |
+| Guest content | Playwright's Chromium 147 (`--kiosk`, 1920×1080) on a 270 KB long text/tile page | same |
+| Measuring client | headless Chromium 1920×1080 via the rk proxy on loopback; WS bytes via Playwright `framereceived`; server CPU from `/proc/<pid>/stat`; xdotool wheel scroll 30 notches/s for 10 s | same; Kasm fps from its own `enable_perf_stats=1` overlay |
+
+rk's `/proxy/{port}/` passed the WebSocket upgrade (101) for both with no code
+change, so the C6 "fixed proxied route" shape is confirmed viable.
+
+### Criterion 1 — can Kasm's chrome be hidden so an iframe reads as a bare screen?
+
+**Yes, and it is the default when embedded.** The client checks
+`window.self !== window.top`; inside an iframe it hides the control bar,
+side panel and handle unless `show_control_bar=1` is passed (query or `#hash`
+param). Probe inside a same-origin iframe: the only visible elements were the
+`noVNC_container` canvas and the 4×4 px hidden keyboard sink. Top-level it
+shows a collapsed left-edge handle (Kasm's own UI). Embedded mode expects the
+parent to drive it via `postMessage({action, value})` — verbs seen in the
+1.5.0 bundle: `show_keyboard_controls` / `hide_keyboard_controls`,
+`enable_ime_mode`, `clipboardsnd`, `setvideoquality`, `set_resolution`,
+`set_streaming_mode`, `set_perf_stats`, `set_idle_timeout`,
+`enable_pointer_lock`, `translate_shortcuts`, `disconnect`, `terminate`; it
+posts `connected` / `disconnected` / `reconnecting` back. So an iframe variant
+gets keyboard, clipboard and quality control without touching Kasm's UI, but
+rk must implement that plumbing (C6 scope, not free).
+
+Stock noVNC's `vnc.html` UI has no hide switch (control bar visible top-level
+and in an iframe) — irrelevant for C3, which uses the `@novnc/novnc` library
+on a bare `<canvas>`; the spike's `perf.html` harness (RFB + one div, ~30
+lines) is exactly that shape and rendered fine.
+
+### Criterion 2 — does Kasm's client behave on a phone?
+
+Judged by code reading and iPhone-14 emulation (Playwright: touch, 390×664,
+mobile UA); **real-device gestures not judged by the agent** — see § Hands-on.
+
+- Gesture set is identical to noVNC 1.7's: both dispatch `onetap` (left),
+  `twotap` (right), `threetap` (middle), `drag`, `longpress`, `twodrag`
+  (scroll), `pinch` — Kasm inherited noVNC's GestureHandler. No advantage
+  either way.
+- Kasm adds `noVNC_touch` on touch devices and a virtual-keyboard control
+  (`virtual_keyboard_visible`, driven by `show_keyboard_controls`); stock noVNC
+  shows its keyboard button on touch devices (visible 35×35 in emulation).
+- **D7 hazard, confirmed:** Kasm's client defaults to `resize=remote`. A
+  phone connecting with defaults resized the shared 1920×1080 desktop to
+  **585×996** within seconds. `resize=scale` (fit) or `resize=off` (1:1 clip)
+  prevents it; rk would have to compose the iframe URL per viewer pointer
+  type. noVNC-lib does nothing unless `resizeSession` is set, so D7 is a
+  one-line decision there.
+- Both fit a 390 px viewport without horizontal scroll (canvas 1920×1080 →
+  390×219 CSS in fit mode).
+
+### Criterion 3 — scrolling a browser page at 1080p
+
+Loopback (client on this VM), 10 s wheel scroll, two runs each, stable to ±2 %:
+
+| | Xvnc + noVNC lib | KasmVNC + Kasm client |
+|---|---|---|
+| Client frame rate | ~101 framebuffer updates/s (noVNC `flip`s) | 24.4 fps max, 13.7 avg (Kasm overlay; WebP, software decode in headless Chromium) |
+| Bandwidth | **121 Mbit/s** (Tight/JPEG q6, ~1:6 ratio per server log) | **42 Mbit/s** (dynamic quality pinned at max — its overlay read "CPU 10/10 · Network 10/10") |
+| Server CPU | 0.31 core | 0.99 core (multithreaded WebP) |
+| Server RSS (Chromium running) | 108 MB | 151 MB |
+| Guest Chromium CPU | 0.17 core | 0.16 core |
+
+Read: at the same content Kasm ships ~3× fewer bytes for ~3× more CPU, and the
+picture it ships is higher quality (WebP, lossless refresh). Neither is
+"smoother" on loopback — both are limited by the guest's scroll, not the
+encoder. D9's < 1 core target: both pass; Kasm only just.
+
+Emulated slow link (CDP throttle, 25 Mbit/s down, 30 ms): Kasm 7.5 Mbit/s at
+1.8 fps, Xvnc 7.8 Mbit/s at 6.1 updates/s — **low confidence**: both
+collapsed to the same ~7.7 Mbit/s, which points at the throttle mechanism
+(per-message latency starving the RFB request loop) rather than at either
+encoder. Do not cite these numbers; C5 must measure on real devices.
+
+Not measurable here: Kasm's H.264/AV1 streaming lane (no GPU → software
+encode; Chromium-for-Testing has no AVC decoder — the client logged
+`AVC/HEVC/AV1 … Unsupported configuration` and fell back to WebP). Real
+context for D9: `tailscale ping` from this VM to the user's MacBook is
+**274 ms** RTT (direct) and to the iPhone **266 ms** (DERP blr). Click-to-pixel
+< 100 ms is unreachable from this host for *any* backend; latency, not the
+encoder, is the smoothness ceiling on this link.
+
+### Does the Kasm client still talk to a standard RFB server?
+
+**No.** Kasm client → `Xtigervnc` (via websockify): protocol 3.8 + security
+None handshake completes, then "Something went wrong, connection is closed",
+0 framebuffer updates. So the Kasm client cannot be the shared renderer for
+the macOS Screen Sharing path; two renderers is a hard requirement of C6.
+
+**The reverse works, which the study assumed it did not:** stock noVNC 1.7
+*library* → KasmVNC 1.5 server (its websocket port, `DisableBasicAuth`,
+`wsProtocols: ['binary']`) connected and rendered the desktop (5 flips, 36 KB
+in 5 s). Two caveats: noVNC's own `vnc.html` UI failed with a 404 because 1.7
+dropped the `binary` subprotocol from the UI path, and Kasm on `-rfbunixpath`
++ `SecurityTypes None` accepted the socket but granted a permission-less user
+("User has no read permissions … kasmvncpasswd") — 0 updates, disconnect at
+10 s. Kasm therefore cannot ride rk's unix-socket relay as configured; it is
+proxy-to-TCP or nothing. Kasm's web listener is also disabled when
+`-rfbunixpath` is given.
+
+### Findings that bind C2 regardless of the verdict
+
+1. **Installing the KasmVNC deb hijacks the `Xvnc` and `vncserver` names** via
+   `update-alternatives` (priority 90 → `/usr/bin/Xkasmvnc`). Half this spike
+   ran against Kasm by accident before noticing. C2 MUST exec **`Xtigervnc`**
+   by name (fallback `Xvnc` only when `Xtigervnc` is absent), and the doctor
+   row should print the resolved binary.
+2. TigerVNC with `-rfbunixpath` **still opens TCP 5900+N** on all interfaces
+   unless **`-rfbport -1`** is passed (verified: with it, only the socket
+   listens). Add `-rfbport -1` to the D5 flag set — "VNC never on TCP on
+   Linux" is otherwise false.
+3. Unix socket paths are capped at ~107 bytes (`vncExtInit: socket path is
+   too long`); `$XDG_STATE_HOME/run-kit/gui/host.sock` is fine, deep scratch
+   paths are not. Validate the length in `EnsureGUI()`.
+4. `-FrameRate=60` and `-FrameRate 60` are both accepted by both servers.
+5. noVNC 1.7's UI resolves `path=` relative to the page URL (it produced
+   `/proxy/6081/proxy/6081/websockify`, which only worked because websockify
+   ignores the path). C3 uses the library with an explicit `ws(s)://` URL, so
+   this is a trap only for ad-hoc testing.
+
+### Why Xvnc stands
+
+- macOS view-only (D6) already forces the noVNC canvas renderer to exist; the
+  Kasm client cannot replace it (above), so Kasm is strictly additive: a second
+  renderer, an iframe with postMessage plumbing, an installer rung, an
+  alternatives hijack to defend against, a TCP web server + TLS + auth to
+  neutralise, per-viewer `resize` URL composition for D7.
+- Its measurable win on this VM is bandwidth (3×), not frame rate, at 3× the
+  CPU; on the user's ~270 ms link the ceiling is latency, which no encoder
+  fixes. That is not "clearly better" — the bar §15 set for flipping D5.
+- Everything Kasm-specific learned here is banked for C6: bare-by-default
+  iframe, the postMessage verb list, `resize=scale|off` per pointer type,
+  proxy-to-TCP only, `DisableBasicAuth 1 -sslOnly 0`, and rk's `/proxy/` WS
+  pass-through already works.
+
+### Hands-on (result recorded above; stacks left running until torn down)
+
+Both desktops were presented into this window's web tile (`rk present`),
+reachable over Tailscale via the rk origin (`https://runner1.bat-ordinal.ts.net`):
+
+- `/proxy/6081/vnc.html?autoconnect=1&path=proxy/6081/websockify&resize=scale` — Xvnc + stock noVNC UI
+- `/proxy/6901/index.html?autoconnect=1&path=proxy/6901/websockify&resize=scale` — KasmVNC (add `&show_control_bar=1` to see its panel; drop `resize=scale` to feel `remote` resize)
+
+Both show kiosk Chromium on the same scroll page. Judged 2026-09-09 from
+India (laptop + phone, ~270 ms RTT): the Xvnc + noVNC tile read as the better
+of the two. Verdict holds; D5 is not reopened. Teardown: the spike agent left a `stop-spike.sh` in its
+scratch dir (kills both X servers, WMs, browsers, websockify); `sudo apt-get
+remove kasmvncserver` also restores the `Xvnc` alternative to TigerVNC.
