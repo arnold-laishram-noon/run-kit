@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GUI Surface — the fourth tile</title>
+<style>
+  :root{--bg:#0f1117;--bg2:#161a23;--bg3:#1d2230;--fg:#d7dae0;--dim:#8b93a5;--line:#2a3040;--green:#4ade80;--amber:#fbbf24;--red:#f87171;--blue:#7dd3fc}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  main{max-width:1040px;margin:0 auto;padding:28px 22px 80px}
+  h1{font-size:22px;margin:0 0 6px;color:#fff}
+  h2{font-size:16px;margin:44px 0 10px;padding-top:14px;border-top:1px solid var(--line);color:var(--green)}
+  h2 small{color:var(--dim);font-weight:normal;margin-left:8px}
+  h3{font-size:14px;margin:22px 0 6px;color:var(--blue)}
+  p{margin:8px 0}
+  .sub{color:var(--dim)}
+  .box{background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:14px 16px;margin:14px 0}
+  .box.rec{border-color:var(--green)}
+  .box.warn{border-color:var(--amber)}
+  ul,ol{margin:6px 0 6px 0;padding-left:22px}
+  li{margin:4px 0}
+  code{background:var(--bg3);padding:1px 5px;border-radius:3px;color:#fff}
+  pre{background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:12px 14px;overflow-x:auto;font-size:12.5px;line-height:1.4;color:#cfd4dd}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:12.5px}
+  th,td{border:1px solid var(--line);padding:6px 8px;vertical-align:top;text-align:left}
+  th{background:var(--bg3);color:#fff;font-weight:600}
+  .ok{color:var(--green)}.meh{color:var(--amber)}.no{color:var(--red)}
+  .tag{display:inline-block;font-size:11px;padding:0 6px;border:1px solid var(--line);border-radius:3px;color:var(--dim);margin-left:6px;vertical-align:middle}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media (max-width:760px){.cols{grid-template-columns:1fr}}
+  .toggle{display:inline-flex;border:1px solid var(--line);border-radius:4px;overflow:hidden;margin:6px 0}
+  .toggle span{padding:6px 10px;border-left:1px solid var(--line);position:relative;color:var(--dim)}
+  .toggle span:first-child{border-left:0}
+  .toggle span.on{background:var(--fg);color:var(--bg)}
+  .toggle span.new{outline:2px solid var(--green);outline-offset:-2px;color:var(--green)}
+  .dot::after{content:"";position:absolute;top:3px;right:3px;width:4px;height:4px;border-radius:50%;background:var(--green)}
+  .wrap{overflow-x:auto}
+  .q{border-left:3px solid var(--amber);padding-left:12px;margin:10px 0}
+  .q b{color:var(--amber)}
+  .k{color:#fff}
+  .toc{columns:2;column-gap:28px;font-size:12.5px}
+  @media (max-width:760px){.toc{columns:1}}
+  .toc a{color:var(--blue);text-decoration:none}
+</style>
+</head>
+<body>
+<main>
+<h1>GUI Surface — the fourth tile</h1>
+<p class="sub">Design study for the <code>gui</code> surface — a remote-desktop lens in run-kit. Supersedes PR #71 and the 2026-07-14 desktop-view plan; builds on window-views.md / surface-layout.md. Written 2026-09-09 in a <code>/fab-discuss</code> session; decisions in §16 are recorded, the execution plan is <code>fab/plans/sahil/26-09-09-gui-surface.md</code>.</p>
+
+<div class="box rec">
+<b class="k">Recommendation in five lines</b>
+<ol>
+  <li><b>It is a surface, not a window.</b> A fourth kind in the existing registry (<code>tty · code · web · gui</code>) — the 4th toggle button, ⌘4, palette rows, zen, zoom, mobile switch group all come free from the layout manager. Content is the host's screen, so the tile is available on <em>every</em> tab, exactly like <code>code</code>.</li>
+  <li><b>One GUI session per host</b>, supervised in an <code>rk-gui</code> sibling tmux session on the rk-daemon socket (the <code>rk-code-server</code> pattern). <b>Off by default</b>; one explicit switch, <code>gui.enabled</code>, both runs the VNC and shows the 4th button (§14). Per-session desktops stay possible later; nothing in v1 forecloses them.</li>
+  <li><b>Protocol: RFB (VNC) over rk's own WebSocket relay</b>, rendered by the stock noVNC library inside the tile. One client covers Linux <em>and</em> macOS. Never expose VNC on TCP; Linux uses a unix socket by convention under <code>$XDG_STATE_HOME/run-kit/gui/</code>.</li>
+  <li><b>Linux = a private virtual display</b> (TigerVNC <code>Xvnc</code> + a window manager — already installed on this VM). <b>macOS = mirror the one live session</b> via Apple Screen Sharing (noVNC speaks Apple's ARD auth). A Mac has no cheap "second desktop"; say so up front.</li>
+  <li><b>Smoothness is a measured upgrade lane, not a v1 bet.</b> Tight/JPEG over WS is fine for browsers and IDEs. If it isn't, swap the Linux backend for KasmVNC (H.264/AV1 since 1.5, WebP, multithreaded) behind the same tile. WebRTC-class stacks (Selkies, neko) fail run-kit's single-origin/tunnel constraint unless run in WS mode, and only Selkies has one.</li>
+</ol>
+</div>
+
+<div class="toc">
+<a href="#model">1. Where it sits in the model</a><br>
+<a href="#name">2. The naming collision</a><br>
+<a href="#scope">3. One per host vs one per tab</a><br>
+<a href="#os">4. What "desktop" means: Linux vs macOS</a><br>
+<a href="#protocol">5. Protocol &amp; stack evaluation</a><br>
+<a href="#arch">6. Recommended architecture</a><br>
+<a href="#perf">7. Performance plan</a><br>
+<a href="#mobile">8. Mobile</a><br>
+<a href="#fullscreen">9. Zen, zoom, and true fullscreen</a><br>
+<a href="#agents">10. The agent side</a><br>
+<a href="#other">11. Things not yet on the list</a><br>
+<a href="#pr71">12. What to salvage from PR #71</a><br>
+<a href="#phases">13. Change stack</a><br>
+<a href="#onoff">14. Turning it on and off</a><br>
+<a href="#kasm">15. KasmVNC, explained</a><br>
+<a href="#decide">16. Decisions (recorded)</a>
+</div>
+
+<h2 id="model">1. Where it sits in the model</h2>
+<p>The screenshot's three buttons are the <code>surface-toggles</code> group: open-tile toggles over the shared registry in <code>lib/surface-layout.ts</code> (<code>SURFACE_GLYPH</code>, <code>SURFACE_LABEL</code>, <code>availableTiles</code>), with ⌘1/2/3 in <code>keybindings.ts</code>. The fourth button is one more row in that registry:</p>
+<div class="toggle"><span class="on dot">&gt;_</span><span class="dot">{}</span><span class="dot">://</span><span class="new dot">▣</span></div>
+<p>Glyph is a placeholder; anything two-cell and ASCII-adjacent works (<code>[]</code>, <code>▣</code>, <code>⎚</code>). The existing vocabulary is "what the tile shows" (prompt, braces, scheme), so a framed-screen glyph fits.</p>
+<p>Availability follows the <code>code</code> precedent, which is the important structural point:</p>
+<table>
+<tr><th></th><th>code (shipped)</th><th>gui (proposed)</th></tr>
+<tr><td><b>Available</b> (button exists)</td><td>a code folder derives (git root / latch)</td><td><code>gui.enabled</code> is on (§14) — a user choice, never a probe result; a host with Xvnc installed but the switch off shows no button</td></tr>
+<tr><td><b>Reachable</b> (live content)</td><td>code-server answers on its conventional port</td><td>the GUI socket answers; otherwise an empty state: restart supervisor · open logs · install hint if the backend is missing</td></tr>
+<tr><td><b>Content selector</b></td><td><code>@rk_win_code_root</code></td><td>none in v1 — the tile shows the host's screen (a per-session display option becomes the selector if per-session GUIs ever land)</td></tr>
+<tr><td><b>Dot</b></td><td>reachability</td><td>VNC WS health (window-views R6)</td></tr>
+</table>
+<p>What comes for free: ⌘4 toggle, overflow-menu checkbox row, palette <code>Toggle GUI</code> / <code>Tile: Switch to GUI</code>, zen (⇧Enter hides top bar + sidebar and zooms the focused tile), tile zoom ⛶, promote/swap/close, mobile switch group radio, 3-tile cap, degradation ladder, <code>@rk_win_layout</code> sharing (<code>rk tab layout --add gui</code> works day one).</p>
+<p><b>R3 (tty always reachable) for a host singleton:</b> the supervisor's tty is the <code>rk-gui</code> window on the rk-daemon server. The tile's empty state and the palette get a <code>GUI: Open supervisor logs</code> action that navigates there. No relay sniffing anywhere.</p>
+
+<h2 id="name">2. The naming collision</h2>
+<p>"Desktop" already means three things in this repo: the Electron viewer shell (<code>app/desktop</code>, <code>rk desktop install</code>, <code>desktop-shell.md</code>, session <code>rk-desktop</code>), the wide-viewport branch in every UI memory file ("desktop vs mobile"), and — in the specs — this lens. A fourth, user-facing "Desktop" button next to a CLI whose <code>rk desktop</code> installs an Electron app is a trap.</p>
+<div class="box"><b class="k">Recommend the kind <code>gui</code></b>, label "GUI", CLI <code>rk gui</code>. In a tty-centric tool it is the honest antonym: tty vs gui. Alternatives: <code>screen</code> (collides with viewport/screen-size prose and GNU screen), <code>display</code> (collides with <code>rk skill display</code>). The spec rows saying <code>desktop</code> get updated in the same change.</div>
+
+<h2 id="scope">3. One per host vs one per tab</h2>
+<p>Your instinct is right, but for a slightly different reason than cost. A bare Xvnc at 1080p is a few tens of MB and idle CPU; displays are cheap. What is expensive and, more importantly, <em>stateful</em> is what runs in them: Chrome's single-instance lock, D-Bus session, keyring, XDG dirs. PR #71 had to invent per-desktop XDG isolation plus Chrome wrapper scripts to make two desktops coexist. That is the real signal: apps assume one GUI session per user.</p>
+<div class="cols">
+<div class="box"><b class="k">One per host (v1)</b>
+<ul>
+<li>Every agent pane exports the same <code>DISPLAY</code>; "open a browser" from any tab lands on the one screen the human is watching.</li>
+<li>Substrate = a host service, like code-server. Availability derives from a socket, no per-window option needed.</li>
+<li>Multiple viewers (phone + laptop + operator) share it in VNC shared mode.</li>
+<li>Cost bounded: one WM, one Chrome profile.</li>
+</ul></div>
+<div class="box"><b class="k">Per tab / per tmux session (later, if ever)</b>
+<ul>
+<li>Needed only when two agents must run isolated GUI apps concurrently (parallel browser tests).</li>
+<li>Would add a per-session display option (<code>@rk_ses_gui</code>) as the tile's content selector — the <code>code</code> content-selector shape. The tile, relay, and renderer don't change.</li>
+<li>Requires the XDG/Chrome isolation machinery PR #71 wrote. Keep it in the salvage bin.</li>
+</ul></div>
+</div>
+<p>Design rule to keep the door open: the relay endpoint takes a <em>display id</em> (<code>/ws/gui/{id}</code>, v1 always <code>host</code>), and the state-stream payload is a list even when it has one entry.</p>
+
+<h2 id="os">4. What "desktop" means: Linux vs macOS</h2>
+<div class="cols">
+<div class="box"><b class="k">Linux (headless VM like this one)</b>
+<ul>
+<li>We <b>own</b> a virtual display: no human is logged into a GUI, so rk creates one. <code>Xvnc</code> is an X server <em>and</em> the VNC server — no Xvfb + x11vnc double hop (PR #71's stack).</li>
+<li>Window manager of choice: this host has <code>kwin_x11</code> only; a light WM (openbox/xfwm4) is a one-line apt. Full DEs need <code>dbus-run-session</code>; PR #71 documented the traps.</li>
+<li>X11 over Wayland for v1: every agent tool (xdotool, Playwright, <code>import</code> screenshots) works on X11; wlroots-headless + wayvnc is viable later but agent input injection is harder.</li>
+<li>Disposable: <code>rk gui off</code> kills the session; state lives in <code>$HOME</code> like any process.</li>
+<li>No GPU on GCP → software encode only; 16 cores make Tight/JPEG or x264-ultrafast trivial.</li>
+</ul></div>
+<div class="box"><b class="k">macOS (laptop or Mac mini)</b>
+<ul>
+<li>There is exactly <b>one</b> GUI session: the logged-in user's. We can <b>mirror</b> it (Apple Screen Sharing = VNC on :5900 with ARD auth; noVNC supports security type 30) or <b>extend</b> it with a virtual monitor via the private <code>CGVirtualDisplay</code> API (PR #71's <code>rk-virtual-display</code>, also SimpleDisplay/BetterDisplay).</li>
+<li>A true second desktop means a second user login (fast user switching over VNC) — slow, awkward, not v1.</li>
+<li>Mirroring a live Mac means every VNC keystroke lands in the human's real session. Default <b>view-only</b> on macOS, with an explicit "take control" toggle.</li>
+<li>Tahoe gotchas: Screen Sharing only accepts connections after an SSH login post-reboot; FileVault blocks auto-login; VNC caps at 1080p without a dummy plug or virtual display.</li>
+<li>XQuartz + Xvfb (PR #71's macOS path) gives an X11 desktop that runs no Mac apps — not what anyone means by "the Mac's desktop". Drop it.</li>
+</ul></div>
+</div>
+<p>Consequence: the tile, relay, and client are identical on both OSes; only the <em>backend</em> the supervisor launches differs (Xvnc vs "dial localhost:5900"). The macOS virtual-display tool is a later, optional backend — it is the only route to "an agent's own screen on a Mac that doesn't steal yours".</p>
+
+<h2 id="protocol">5. Protocol &amp; stack evaluation</h2>
+<p>Hard constraint first: run-kit is one HTTP origin on one port, TLS by Tailscale Serve, remote hosts reached over an SSH tunnel. Anything needing UDP, ICE, TURN, or a second public port is out, or must have a WebSocket mode.</p>
+<div class="wrap">
+<table>
+<tr><th>Stack</th><th>Single-WS origin</th><th>Linux headless</th><th>macOS</th><th>Mobile client</th><th>Smooth-ness</th><th>Footprint / integration</th><th>Verdict</th></tr>
+<tr><td><b>RFB via stock noVNC + TigerVNC Xvnc</b></td><td class="ok">yes — rk relays WS⇄unix socket</td><td class="ok">Xvnc is the X server; SetDesktopSize, shared mode, unix socket; already on this host</td><td class="ok">same client talks Apple Screen Sharing (ARD auth)</td><td class="ok">noVNC gestures: tap, 2-tap right-click, long-press, 2-finger scroll, pinch</td><td class="meh">Tight/JPEG; great for UI, weak for video</td><td class="ok">npm lib in the tile (PR #71 did this); apt <code>tigervnc-standalone-server</code> + WM</td><td class="ok"><b>v1</b></td></tr>
+<tr><td><b>KasmVNC</b> <span class="tag">1.5.0 · Jul 2026</span></td><td class="ok">WS-native, unix relay support</td><td class="ok">own Xvnc fork; DRI3; dynamic resize</td><td class="no">Linux only</td><td class="ok">touch, Keyboard API</td><td class="ok">WebP tiles, multithreaded; H.264/H.265/AV1 streaming mode (VAAPI/NVENC/software)</td><td class="meh">broke from RFB — stock noVNC can't connect; must iframe its UI through <code>/proxy</code> or vendor its client fork; YAML config + own HTTPS server</td><td class="meh"><b>upgrade lane</b> for Linux</td></tr>
+<tr><td><b>Selkies</b> <span class="tag">MPL-2.0</span></td><td class="ok">WS default mode, WebRTC opt-in</td><td class="ok">X11 or Wayland; Rust capture/encode (pixelflux)</td><td class="no">Linux only</td><td class="ok">WebCodecs decode, hardware on phones</td><td class="ok">H.264 60fps@1080p in software; Opus audio</td><td class="no">Python aiohttp app + Rust exts; heaviest install; embed its web client</td><td class="meh">alternative upgrade lane if audio/60fps matter</td></tr>
+<tr><td><b>RDP</b> (xrdp 0.10 + xorgxrdp GFX H.264; IronRDP WASM client)</td><td class="ok">WS⇄TCP relay</td><td class="ok">xorgxrdp is an X server; PAM login = multi-user</td><td class="no">no macOS server</td><td class="meh">IronRDP web is young</td><td class="ok">H.264 with mstsc; unverified in the WASM client</td><td class="no">password login flow, two projects, host has xrdp 0.9 (no GFX)</td><td class="no">only if Windows hosts ever matter</td></tr>
+<tr><td><b>RustDesk</b> ("Rust desktop")</td><td class="no">needs hbbs/hbbr ID+relay servers</td><td class="ok"></td><td class="ok"></td><td class="ok">web client uses WebCodecs</td><td class="ok">VP9/AV1</td><td class="no">its own infrastructure and client; AGPL server</td><td class="no">reject</td></tr>
+<tr><td><b>neko</b></td><td class="no">WebRTC</td><td class="ok">Docker-first</td><td class="no"></td><td class="ok"></td><td class="ok">~300ms</td><td class="no">container-shaped</td><td class="no">reject</td></tr>
+<tr><td><b>Guacamole</b></td><td class="ok"></td><td class="ok">brokers VNC/RDP</td><td class="ok">via VNC</td><td class="meh"></td><td class="no">server-rendered PNG, 4+ MB/s reports</td><td class="no">Java server + guacd</td><td class="no">reject</td></tr>
+<tr><td><b>Sunshine / Moonlight</b></td><td class="no">UDP</td><td class="ok"></td><td class="ok"></td><td class="no">native client only</td><td class="ok">best-in-class</td><td class="no"></td><td class="no">reject</td></tr>
+<tr><td><b>Custom: capture → H.264 → WS → WebCodecs</b></td><td class="ok"></td><td class="ok">x11grab / kmsgrab</td><td class="ok">ScreenCaptureKit + VideoToolbox — the only smooth macOS route</td><td class="ok">hardware decode; Safari 16.4+ has VideoDecoder</td><td class="ok"></td><td class="no">we rebuild Selkies plus input injection (XTEST / CGEvent)</td><td class="meh">Phase 4 candidate for macOS; PR #71's Obj-C tool is half of it</td></tr>
+</table>
+</div>
+<p><b>Why VNC wins v1 despite being the "old" protocol:</b> it is the only stack where one client, one relay, and one tile cover both OSes, ride the existing trust boundary unchanged, and need zero new runtimes. noVNC 1.6 already decodes Open H.264 (RFB encoding 50) — today only QEMU emits it, so that is a free ride if TigerVNC or KasmVNC ever ship it standard.</p>
+
+<h2 id="arch">6. Recommended architecture</h2>
+<pre>
+ browser tile (GuiSurface: noVNC RFB → &lt;canvas&gt;)         state stream: gui[{id:"host", available, reachable, display, size}]
+        │  wss  /ws/gui/host                                      ▲
+        ▼                                                         │ probe (dial socket, TTL-cached like codeServerReachable)
+ rk daemon ── WS⇄stream relay (api/gui_ws.go, sibling of terminals_ws.go) ── Linux: unix  $XDG_STATE_HOME/run-kit/gui/host.sock
+        │                                                                  └─ macOS: tcp 127.0.0.1:5900 (Apple Screen Sharing)
+        │ POST /api/gui/start|stop|resize         (Constitution IX: POST only, no new route family beyond /api/gui/*)
+        ▼
+ tmux server rk-daemon
+   ├─ rk-code-server   (existing sibling)
+   └─ rk-gui           (new sibling; window "host")
+         └─ rk gui supervise host        ← the pane command; its tty IS the supervisor log (R3)
+               ├─ Xvnc :N -rfbunixpath …/host.sock -SecurityTypes None -AlwaysShared -AcceptSetDesktopSize -geometry 1920x1080
+               └─ WM (openbox | xfwm4 | kwin_x11 …) with DISPLAY=:N
+</pre>
+<ul>
+<li><b>No new env keys</b> (Constitution IV): socket path and display number are conventions; <code>rk gui env</code> prints them.</li>
+<li><b>No DB</b> (II): availability = PATH probe; reachability = socket dial; running = session exists. Deleting the socket file degrades to "not running".</li>
+<li><b>Survives rk restarts</b> (VI): tmux owns the process; rk reattaches the relay.</li>
+<li><b>Security</b> (I): <code>exec.CommandContext</code> argv slices; the socket is 0600 in a 0700 dir; VNC auth is <code>None</code> because the only client is rk on the same user — identical to code-server's <code>--auth none</code>. macOS credentials: the Screen Sharing password lives in the login Keychain, read via <code>security find-generic-password</code>, never in config.yaml.</li>
+<li><b>Frontend</b>: <code>GuiSurface</code> is a peer of <code>CodeSurface</code>; <code>@novnc/novnc</code> RFB with <code>scaleViewport</code>/<code>resizeSession</code>; bottom-of-tile controls per current house vocabulary; focus steal-guard and chord reclaim reuse the code tile's seams.</li>
+</ul>
+
+<h2 id="perf">7. Performance plan</h2>
+<p>"Really smooth" needs a definition before a stack. Proposed targets on this VM over Tailscale: click-to-pixel under 100 ms, sustained 30 fps while scrolling a browser page at 1080p, under 1 core of Xvnc CPU. Measure with a Playwright spec that scrolls a page in the guest and samples noVNC's frame counter; keep the numbers in the change's acceptance.</p>
+<ul>
+<li><b>Encoding</b>: Tight with JPEG quality 6–7 and compression 2 is the noVNC default and where Proxmox/GCP consoles live. Lossless refresh after idle is a TigerVNC server option worth turning on for text.</li>
+<li><b>Frame rate</b>: Xvnc <code>FrameRate=60</code>; noVNC requests continuously while focused, backs off when the tile is unfocused or the tab is hidden (saves phone battery).</li>
+<li><b>Resize policy</b>: the desktop follows the <b>most recently focused fine-pointer viewer's</b> tile size via SetDesktopSize (that is how one viewer stays pixel-perfect); other viewers scale client-side. <b>Phones never drive resize</b> — a 390 px desktop would wreck the laptop viewer's layout. A palette <code>GUI: Lock resolution</code> pins it.</li>
+<li><b>HiDPI</b>: render at CSS pixels (1×) by default; a <code>GUI: Retina</code> toggle doubles the framebuffer for the viewer that asked. 4× pixels is real cost on software Tight.</li>
+<li><b>Local cursor</b>: noVNC renders the cursor locally (Cursor pseudo-encoding), so pointer latency is client-side — this is most of what "feels smooth".</li>
+<li><b>Upgrade lane, gated on the measurement</b>: if the numbers miss, swap the Linux backend for KasmVNC and either iframe its proxied UI (the code-server integration shape — one afternoon) or vendor its client fork into the tile (keeps rk chrome). Selkies if audio or 60 fps video become requirements. Neither touches the tile model.</li>
+</ul>
+
+<h2 id="mobile">8. Mobile</h2>
+<ul>
+<li><b>Gestures</b> come from noVNC: one-tap click, two-finger tap right-click, long-press drag, two-finger drag scroll, pinch to zoom when the viewport is clipped. Pan by drag when zoomed.</li>
+<li><b>Two view modes</b>: <em>fit</em> (whole desktop scaled to the tile — readable overview) and <em>1:1</em> (clip + pan — precise clicks). A single chip toggles; default fit.</li>
+<li><b>Keyboard</b>: the soft keyboard needs a focusable text sink; noVNC has one. The bigger win is the existing <b>compose strip</b>: route its text into the GUI as a paste (ClientCutText + ⌘V/^V) so phone typing into a browser field works like typing into a tmux pane today.</li>
+<li><b>Desktop shape on a phone</b>: don't resize the shared desktop to portrait (policy above). If a phone-first workflow shows up, a portrait <em>second</em> display is exactly the per-session case in § 3.</li>
+<li><b>Bandwidth</b>: cap JPEG quality lower on coarse pointers; noVNC exposes <code>qualityLevel</code>/<code>compressionLevel</code> per client.</li>
+<li><b>Battery</b>: stop framebuffer requests when the tile is hidden or the PWA is backgrounded.</li>
+</ul>
+
+<h2 id="fullscreen">9. Zen, zoom, and true fullscreen</h2>
+<ul>
+<li><b>Zen</b> (⇧Enter) already hides the top bar and sidebar and zooms the focused tile. With the GUI tile focused that is "almost fullscreen" for free. Nothing to build.</li>
+<li><b>Absolute fullscreen</b> = <code>element.requestFullscreen()</code> on the tile, plus <code>navigator.keyboard.lock()</code> in Chromium so Esc, ⌘W, ⌘T reach the guest instead of the browser. New tile-header verb and palette entry <code>GUI: Fullscreen</code>; Esc held one second exits (the Chrome convention under keyboard lock).</li>
+<li><b>iPhone cannot fullscreen a div</b> — Safari only fullscreens video elements on iPhone (iPad and Mac are fine). The honest fallback on iPhone is zen inside the installed PWA (<code>display: standalone</code> already ships), which is edge-to-edge minus the status bar.</li>
+<li><b>Chord conflicts</b>: inside the GUI tile, ⌘K / ⌘1-4 / ⌘; are rk's; everything else goes to the guest. Same demotion class the code tile uses. Fullscreen + keyboard lock flips all chords to the guest.</li>
+</ul>
+
+<h2 id="agents">10. The agent side</h2>
+<p>This is the part PR #71 didn't have and the reason to build the feature: an agent gets a computer.</p>
+<ul>
+<li><code>rk gui env</code> → <code>DISPLAY=:N</code> for <code>eval</code>; <code>rk agent setup</code> exports it into every managed pane so <code>chromium</code>, <code>xdg-open</code>, Playwright headed mode just work.</li>
+<li><code>rk gui exec &lt;cmd…&gt;</code> runs a command on the display (the <code>rk code exec</code> shape).</li>
+<li><code>rk gui shot [--out f.png]</code> screenshots the display — the agent can <em>see</em> the GUI it is driving. Pair with xdotool and you have a computer-use loop without any vendor API.</li>
+<li><code>rk gui on|off|status</code> (§14), and <code>rk skill gui</code> as the briefing page.</li>
+<li>Later: a <code>@rk_win_gui_note</code>-style "this tab owns the GUI right now" marker so the sidebar shows which agent is driving the screen.</li>
+</ul>
+
+<h2 id="other">11. Things not yet on the list</h2>
+<ul>
+<li><b>Clipboard</b> both ways: RFB cut-text (TigerVNC extended clipboard handles UTF-8); browser side needs a user gesture for <code>navigator.clipboard.read</code>. Palette <code>GUI: Paste</code> as the deterministic path.</li>
+<li><b>Audio</b>: not in VNC. Out of scope for v1; the route is PulseAudio null sink → Opus → WS → WebAudio (Selkies' pcmflux does exactly this).</li>
+<li><b>Cursor fights</b>: shared mode means two humans and an agent can all move the mouse. Inherent to one-screen; the per-session escape hatch is the answer if it hurts.</li>
+<li><b>IME / dead keys</b>: noVNC sends keysyms; non-Latin input via the compose-strip paste path is more reliable than live keysyms.</li>
+<li><b>Lifecycle and cost</b>: Chrome in the desktop eats memory forever. Never auto-kill the desktop (apps matter); show uptime + RSS in the settings row and the tile's hover state so the <code>rk gui off</code> decision is informed.</li>
+<li><b>Safety on macOS</b>: mirroring the live session means an agent-driven click could hit the human's mail client. View-only default; "take control" is a deliberate act; log every control grant.</li>
+<li><b>Remote hosts</b>: <code>rk remote</code> reaches a remote rk over an SSH tunnel; the GUI socket, supervisor, and relay all live on the remote. Nothing special, but the double hop adds latency — measure there too.</li>
+<li><b>e2e on CI</b>: Xvnc is apt-installable on runners; capability-gated specs skip cleanly when absent, the same as the existing plan's risk register.</li>
+<li><b>Licensing</b>: TigerVNC (GPL) and KasmVNC (GPL) run as external processes, fine; noVNC is MPL-2.0 as a bundled lib; Selkies MPL-2.0.</li>
+<li><b>Wayland</b>: Chrome and most toolkits run fine under XWayland later; keep X11 until an agent tool needs Wayland.</li>
+<li><b>Screen recording</b>: an agent's GUI session is worth recording (ffmpeg x11grab to a file) for post-mortems — cheap once the display exists.</li>
+<li><b>File transfer</b>: drag-drop into the tile → the file lands in <code>$HOME</code> via the existing 50 MB upload path, then the agent uses it. Not a VNC feature; an rk one.</li>
+<li><b>Multi-monitor</b>: no. Constitution IV.</li>
+</ul>
+
+<h2 id="pr71">12. What to salvage from PR #71</h2>
+<p>PR #71 (Mar 2026, still open, 3,886 additions) validated the hard parts and violates three spec rules the July plan already listed (name-prefix typing, relay sniffing, fixed-at-creation view). It is bitrotted against five months of main. Close it with a comment linking this page.</p>
+<table>
+<tr><th>Keep as reference</th><th>Drop</th></tr>
+<tr><td>
+<ul>
+<li><code>DesktopClient</code> noVNC canvas + <code>scaleViewport</code>, <code>novnc.d.ts</code> typings (re-verify against noVNC 1.6)</li>
+<li>WM detection ladder and the <code>dbus-run-session</code> / kwalletrc traps in <code>docs/desktop-streaming.md</code></li>
+<li>XDG + Chrome isolation script — the per-session future</li>
+<li><code>tools/rk-virtual-display</code> (CGVirtualDisplay + ScreenCaptureKit + libvncserver) — the macOS "own screen" backend, phase 4</li>
+<li>Resolution picker UX</li>
+</ul></td><td>
+<ul>
+<li>Xvfb + x11vnc double hop → Xvnc</li>
+<li><code>desktop:</code> window-name typing, <code>@rk_vnc_port</code> on windows</li>
+<li>Relay type sniffing on <code>/relay/{session}/{window}</code></li>
+<li>Per-window desktop creation endpoint and entry points</li>
+<li>Xvfb restart for resize → SetDesktopSize</li>
+<li>XQuartz macOS path</li>
+</ul></td></tr>
+</table>
+
+<h2 id="phases">13. Change stack <small>each row = one fab change / PR</small></h2>
+<table>
+<tr><th>#</th><th>Change</th><th>Ships</th><th>Acceptance</th></tr>
+<tr><td>1</td><td><b>spec + plan</b></td><td>Amend window-views/surface-layout registry rows (<code>desktop</code> → <code>gui</code>), a <code>gui.md</code> spec, the plan under <code>fab/plans/sahil/</code>; close PR #71</td><td>Docs only</td></tr>
+<tr><td>1½</td><td><b>KasmVNC spike</b></td><td>Half a day to a day on this VM, no code merged: unix socket + auth off + proxied iframe; judge chrome-hiding, phone behaviour, scroll feel vs Xvnc (§15)</td><td>a written verdict that picks change 2's Linux default</td></tr>
+<tr><td>2</td><td><b>gui-backend</b></td><td><code>gui.enabled</code> settings key; <code>rk gui on|off|status|env|supervise</code>; <code>rk-gui</code> sibling session ensured while enabled; Linux backend (Xvnc, or Kasm per the spike) + macOS Screen Sharing dial; <code>/ws/gui/{id}</code> relay; <code>gui[]</code> on the state stream with TTL probe; doctor row</td><td>curl-level: <code>rk gui on</code> → socket answers RFB banner over the WS; kill Xvnc → reachable flips; <code>rk daemon restart</code> re-ensures; <code>rk gui off</code> lists running apps and kills the session; Go tests for relay teardown, probe, and the never-on-by-default invariant</td></tr>
+<tr><td>3</td><td><b>gui-surface</b></td><td>Registry row gated on <code>enabled</code>, glyph, ⌘4, palette (toggle tile · turn on/off with confirm), settings-dialog row, <code>GuiSurface</code> renderer (noVNC canvas; Kasm iframe variant if chosen), enabled-but-unreachable empty state, dot, resize policy, clipboard paste, mobile fit/1:1 chip, fullscreen verb</td><td>button absent while off on every tab, present within one state event of <code>on</code>; zen + zoom behave; phone viewport scales without driving resize; <code>@rk_win_layout=split-h:tty,gui</code> degrades to <code>single:tty</code> while off and comes back on re-enable; capability-gated e2e</td></tr>
+<tr><td>4</td><td><b>gui-agent-tools</b></td><td><code>rk gui exec|shot</code>, DISPLAY export in <code>rk agent setup</code>, <code>rk skill gui</code>, compose-strip → paste routing</td><td>an agent opens a URL on the screen and screenshots it, from a plain pane</td></tr>
+<tr><td>5</td><td><b>measure + upgrade gate</b></td><td>Perf spec with targets from § 7; decision record: stay on Xvnc, or add the KasmVNC backend</td><td>numbers in the memory file</td></tr>
+<tr><td>6?</td><td><b>macOS own-screen backend</b></td><td>Revive <code>rk-virtual-display</code> as a backend behind the same relay</td><td>optional; only if Mac hosts become primary</td></tr>
+</table>
+
+<h2 id="onoff">14. Turning it on and off <small>decided 2026-09-09: explicit user choice, never on by default</small></h2>
+<p>Two facts have to line up: the VNC process runs only because a human asked, and the 4th toggle button exists exactly when the GUI is enabled. One switch does both.</p>
+<div class="box rec">
+<b class="k"><code>gui.enabled</code> — a boolean in the settings registry, default <code>false</code></b>
+<ul>
+<li><b>Where it lives</b>: <code>~/.config/run-kit/config.yaml</code> behind <code>internal/settings</code> (Constitution IV: per-instance preference, settings-registry home; no env form — env stays the three binding keys). The registry already has bool keys (<code>boolValue</code>), so the settings dialog — the one permitted settings surface — grows the row automatically.</li>
+<li><b>On</b>: the daemon ensures the <code>rk-gui</code> supervisor session (Linux: Xvnc + WM; macOS: nothing to spawn — the relay dials Screen Sharing), the state stream flips <code>gui[0].enabled</code>, every connected tab shows the 4th button. While enabled, the daemon re-ensures the session on boot, the <code>ensureCodeServer</code> shape — the user opted in once; rk restarts don't un-opt them.</li>
+<li><b>Off</b>: the button disappears from every tab, open <code>gui</code> tiles degrade out of <code>@rk_win_layout</code> via the existing ladder (the option is left as written, so re-enabling brings them back), and the <code>rk-gui</code> session is killed. Killing it kills every app on the display, so <b>off is a confirmed action</b>: the settings toggle shows what is running ("Chromium, 3 windows · up 4h") before it proceeds; the CLI prints the same and asks unless <code>--yes</code>.</li>
+<li><b>Never on by default</b>: <code>rk doctor</code> shows <code>gui: off</code>; no install step, update, or backend probe flips it. A host with Xvnc installed still shows no button until someone turns the switch.</li>
+</ul>
+</div>
+<table>
+<tr><th>Entry point</th><th>Form</th><th>Notes</th></tr>
+<tr><td>CLI</td><td><code>rk gui on</code> / <code>rk gui off [--yes]</code> / <code>rk gui status</code></td><td>writes the setting through <code>settings.Load/Save</code>, then ensures or kills the session; <code>on</code> on a host with no backend prints the install hint and still enables (the tile then shows the hint — the code tile's not-running state)</td></tr>
+<tr><td>Settings dialog</td><td>a <b>GUI</b> row with a toggle</td><td>registry-driven; the off direction opens the confirm listing running apps</td></tr>
+<tr><td>Palette</td><td><code>GUI: Turn on</code> / <code>GUI: Turn off</code></td><td>Constitution V parity for the dialog toggle; same confirm</td></tr>
+<tr><td>Tile empty state</td><td>appears only when enabled but unreachable</td><td>"GUI is on but not running" → Restart supervisor · Open supervisor logs · install hint; there is deliberately <b>no Start button on a disabled host</b>, because the button itself doesn't exist there</td></tr>
+</table>
+<p>Two-tier alternative considered and rejected: a separate <em>enabled</em> preference plus a non-persisted <em>running</em> state (start/stop buttons). It doubles the states a user has to reason about ("on but stopped?") and the payoff — a smaller idle footprint — is a few tens of MB for an idle Xvnc + WM. If a heavy idle desktop ever matters, <code>Xvnc -MaxDisconnectionTime</code> is a one-flag idle policy that keeps the single switch.</p>
+
+<h2 id="kasm">15. KasmVNC, explained</h2>
+<p><b>What it is.</b> A fork of TigerVNC by Kasm Technologies (GPL v2, 2020→), shipped as <code>kasmvncserver</code> deb/rpm/apk. It is the engine under Kasm Workspaces and LinuxServer.io's <code>webtop</code> images, so it is the single most-deployed "Linux desktop in a browser tab" server. Like TigerVNC's Xvnc it is <em>one process that is both the X server and the VNC server</em> — but it also embeds an HTTPS/WebSocket web server that serves its own browser client. No websockify, no Xvfb.</p>
+<p><b>What it changed.</b> Kasm deliberately broke from the RFB spec to optimize for browsers:</p>
+<ul>
+<li><b>Encoding</b>: WebP tiles alongside JPEG, chosen per region; multi-threaded server-side encoding; a <em>dynamic quality</em> loop that lowers quality while pixels move and does a lossless refresh when they stop. 1.4 (Oct 2025) added multi-threaded async decoding in the client and a big CPU cut.</li>
+<li><b>Video streaming mode</b> (1.5, Jul 2026): H.264 / H.265 / AV1 with VAAPI (Intel/AMD), NVENC (NVIDIA), or software encoders, decoded in the browser (WebCodecs). This is the "buttery" lane — full-frame video codec instead of tiles when content is moving.</li>
+<li><b>Client extras</b> over a data channel: seamless clipboard through the browser Clipboard API, file upload/download, multi-monitor (each monitor a browser window), touch input, Keyboard API for exact key handling, relative mouse mode (1.5), watermarking and other DLP knobs.</li>
+<li><b>Server extras</b>: DRI3 GPU acceleration for apps in the session (1.1), unix-socket relays for containerised setups (1.2), YAML config with env-var overrides (1.5), a user file with per-user permission levels (view-only / control / owner), HTTP basic auth or none, optional systemd units.</li>
+</ul>
+<p><b>Where it would sit in run-kit.</b> A second Linux backend behind the same <code>gui[]</code> payload and the same on/off switch: the supervisor launches <code>kasmvncserver</code> bound to a unix socket with auth and TLS off; rk reverse-proxies its HTTP + WS under a fixed route (the <code>/code/</code> machinery, byte for byte); the tile renders <b>its</b> client in an iframe — the exact shape the <code>code</code> tile already has. Everything in §7 (resize follow, quality, clipboard, touch) is then Kasm's job, not ours.</p>
+<div class="cols">
+<div class="box"><b class="k">Why it is attractive</b>
+<ul>
+<li>Best perceived smoothness in the VNC family today, plus a real codec lane, with zero custom media code.</li>
+<li>One binary replaces Xvnc + our noVNC renderer + the resize/clipboard/touch/quality UX in change 3.</li>
+<li>Battle-tested for exactly this use (webtop).</li>
+<li>Same relay boundary: unix socket, same user, proxied by rk.</li>
+</ul></div>
+<div class="box warn"><b class="k">Why it is not a drop-in</b>
+<ul>
+<li><b>Stock noVNC cannot connect to it.</b> Its client is a diverged fork. Either iframe Kasm's UI or vendor the fork — and the fork's ability to still talk to a standard server (the macOS Screen Sharing path) is unverified. Realistically: <b>two renderers</b> — Kasm iframe for Linux, noVNC canvas for macOS.</li>
+<li><b>Linux only</b>, so it never helps the Mac.</li>
+<li><b>Iframe debt</b>: chords swallowed unless focus-hopped (the code tile carries the same seams), Kasm's own control bar and side panel inside our tile (hideable via its settings — verify), its connection state invisible to our dot except via a reachability probe.</li>
+<li>Its own HTTP server, TLS, auth and YAML to neutralise; version drift tracked like code-server.</li>
+<li>Host packages: Ubuntu/Debian/Fedora/Alpine/openSUSE; not in Ubuntu's own archive — a GitHub release deb, so <code>rk gui on</code> needs an installer rung like <code>rk code-server install</code>.</li>
+</ul></div>
+</div>
+<div class="box rec"><b class="k">My read.</b> Since macOS view-only is in v1, the noVNC canvas renderer must exist anyway; KasmVNC is therefore purely additive, never a replacement. So the question is only <em>when</em>. Recommended: a <b>one-day spike before change 2</b> — install KasmVNC 1.5 on this VM, bind it to a unix socket with auth off, proxy it through <code>/proxy</code>, iframe it, and judge three things: can its chrome be hidden, does its client behave on a phone, and how does scrolling a browser page feel next to Xvnc + noVNC over Tailscale. If the answer is "clearly better", change 2 builds the Kasm backend as the Linux default and Xvnc becomes the no-install fallback; if not, the plan stands as written and Kasm stays the measured upgrade lane.</div>
+
+<h2 id="decide">16. Decisions <small>recorded 2026-09-09</small></h2>
+<div class="q"><b>Name.</b> <code>gui</code> kind, "GUI" label, <code>rk gui</code> CLI. ✓</div>
+<div class="q"><b>macOS v1.</b> Mirror the live session, view-only. ✓</div>
+<div class="q"><b>Resize.</b> Desktop follows the last-focused fine-pointer viewer; phones never drive resize. ✓</div>
+<div class="q"><b>On/off.</b> Never on by default. One explicit switch, <code>gui.enabled</code>, per §14; the 4th button exists iff enabled. ✓</div>
+<div class="q"><b>Upgrade lane.</b> Open — see §15. Proposed: spike KasmVNC before change 2 locks the Linux backend.</div>
+<p class="sub" style="margin-top:36px">Sources checked: noVNC 1.6.0 release + rfb.js (ARD type 30, Open H.264, gestures, SetDesktopSize); KasmVNC releases through 1.5.0 (2026-07-29) and README; Selkies design docs (WS default, pixelflux, MPL-2.0); IronRDP web-client docs; xrdp 0.10.2 H.264 wiki; Apple Screen Sharing / Tahoe headless threads; WebKit WebCodecs + Fullscreen API status; local host probe (TigerVNC 1.12 Xvnc with rfbunixpath/AcceptSetDesktopSize, xvfb, xrdp 0.9.17, kwin_x11, ffmpeg libx264, no /dev/dri).</p>
+</main>
+</body>
+</html>

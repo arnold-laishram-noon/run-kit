@@ -1,0 +1,334 @@
+# GUI surface execution plan — remote desktop as the fourth tile
+
+> Plan doc — written 2026-09-09 from the balmy-frog `/fab-discuss` thread.
+> Authority for design: [`docs/wiki/gui-surface-design-study.html`](../../../docs/wiki/gui-surface-design-study.html)
+> (the study — protocol matrix, OS split, on/off switch, mobile, agent verbs,
+> recorded decisions in its §16) plus [`docs/specs/window-views.md`](../../../docs/specs/window-views.md)
+> and [`docs/specs/surface-layout.md`](../../../docs/specs/surface-layout.md)
+> (the lens/tile model this rides). This doc owns only the execution shape:
+> decisions the intakes treat as Certain, the change breakdown, gates,
+> acceptance, and the pickup protocol. Supersedes
+> [`26-07-14-desktop-view.md`](26-07-14-desktop-view.md) and PR #71
+> (`260323-a805-web-based-remote-desktop`).
+
+**Goal**: a `gui` surface — the host's graphical desktop rendered as a fourth
+tile kind beside `tty` / `code` / `web` — that a human can watch and drive
+from any tab (phone included), that agents can launch apps into and
+screenshot, and that exists only when the user has explicitly turned it on.
+
+**Status (2026-09-09)**: plan only. No change drafted. C0 (spike) is the
+first pickup.
+
+---
+
+## Decision log (Certain — intakes do not re-open these)
+
+| # | Decision | Why |
+|---|----------|-----|
+| D1 | **Surface kind `gui`**, label "GUI", CLI `rk gui`. Not `desktop` (collides with the Electron shell `rk desktop` / `app/desktop` and the viewport prose everywhere), not `screen`/`display` (collide with viewport prose / `rk skill display`) | study §2 |
+| D2 | **One GUI session per host** (`id = host`). Substrate is a host service like code-server, not a window row. The relay path and the state payload are list-shaped (`/ws/gui/{id}`, `gui: [...]`) so per-session displays can land later without reshaping | study §3 |
+| D3 | **Off by default. One switch, `gui.enabled`** (settings registry bool, `~/.config/run-kit/config.yaml`, no env form). On ⇒ supervisor ensured (and re-ensured on daemon boot); the 4th toggle button exists **iff** enabled. Off ⇒ button gone on every tab, session killed after a confirm that lists running apps. No install/update/probe ever flips it | study §14 |
+| D4 | **Protocol: RFB over rk's own WebSocket relay; renderer: stock noVNC (`@novnc/novnc`) canvas in the tile.** VNC never on TCP on Linux — unix socket by convention under `$XDG_STATE_HOME/run-kit/gui/`; auth `None` (same trust boundary as code-server `--auth none`) | study §5–6 |
+| D5 | **Linux backend v1 = TigerVNC `Xvnc`** (`-rfbunixpath … -SecurityTypes None -AlwaysShared -AcceptSetDesktopSize -geometry 1920x1080 FrameRate=60`) + a window manager, X11 not Wayland. **Unless C0 says KasmVNC** — then KasmVNC is the Linux default and Xvnc the no-install fallback | study §4, §15 |
+| D6 | **macOS v1 = mirror the live session via Apple Screen Sharing, view-only.** Relay dials `127.0.0.1:5900`; noVNC negotiates ARD (security type 30); password from the login Keychain (`security find-generic-password`), never config.yaml. "Take control" is a later, deliberate toggle. XQuartz path dropped; the CGVirtualDisplay tool is an optional later backend | study §4 |
+| D7 | **Resize policy**: the desktop follows the **last-focused fine-pointer viewer's** tile size via SetDesktopSize; other viewers scale client-side; **coarse-pointer viewers never drive resize**; palette `GUI: Lock resolution` pins it. HiDPI renders 1× by default | study §7 |
+| D8 | **R3 for a host singleton**: the supervisor's tty is the `rk-gui` window on the rk-daemon server; palette/empty-state action `GUI: Open supervisor logs` navigates there. No relay sniffing, no window-name typing, no `@rk_vnc_port`-style per-window option | window-views R1/R3 |
+| D9 | Smoothness targets are **measured after C3**, not assumed: click-to-pixel < 100 ms, ≥ 30 fps scrolling a browser page at 1080p over Tailscale, < 1 core Xvnc CPU. KasmVNC (Linux only, its own client, iframe via the `/code/` proxy shape) is the upgrade lane | study §7, §15 |
+| D10 | Out of scope for the whole plan: audio, multi-monitor, per-session displays, Wayland, macOS "take control", the macOS virtual-display backend, board pins of `(window, gui)` | study §11 |
+
+---
+
+## Change breakdown
+
+Each row is one fab change / one PR in run-kit. Sizes are pipeline gut-feel.
+Agents: fill your row when you create the change; mark Done when merged.
+
+| # | Slug (suggested) | Depends on | Size | Change folder | PR | Status |
+|---|------------------|-----------|------|---------------|----|--------|
+| C0 | *(spike — no fab change; written verdict only)* | — | S | — | — | not started |
+| C1 | `gui-spec-and-registry-rename` | — | S | | | not started |
+| C2 | `gui-backend-switch-and-relay` | C0 verdict, C1 | L | | | not started |
+| C3 | `gui-surface-tile` | C2 merged | L | | | not started |
+| C4 | `gui-agent-verbs` | C2 merged (∥ C3) | M | | | not started |
+| C5 | `gui-perf-measure` | C3, C4 merged | S | | | not started |
+| C6 | `gui-kasm-backend` *(conditional on C5)* | C5 verdict | M | | | not started |
+
+C1 ∥ C0. C3 ∥ C4 after C2. C6 only if C5 misses D9's targets and C0 did not already make KasmVNC the default.
+
+---
+
+### C0 — KasmVNC spike (half a day, this VM, nothing merged)
+
+**Purpose**: decide C2's Linux default before it is built (D5).
+
+**Do**: install the KasmVNC 1.5.x jammy deb from its GitHub releases; run it
+under the current user bound to a unix socket with basic auth and TLS off;
+put its HTTP + WS behind `/proxy/{port}/` (or a throwaway route if the
+unix-socket form needs one); open it in a web tile via `rk present`. Judge
+three things against Xvnc + stock noVNC (`npx novnc` or the PR #71 branch
+client) over Tailscale from a laptop and a phone:
+
+1. Can its control bar / side panel be hidden so an iframe reads as a bare
+   screen (YAML `ui` keys or URL params)?
+2. Does its client behave on a phone (tap, two-finger scroll, pinch, soft
+   keyboard)?
+3. Scrolling a browser page at 1080p — perceived smoothness, Xvnc/Kasm CPU,
+   bandwidth.
+
+Also confirm: does the Kasm client fork still connect to a *standard* RFB
+server (matters for whether macOS could share one renderer)?
+
+**Output**: a dated verdict section appended to this plan (§ C0 verdict)
+naming C2's Linux default. Write it even if the answer is "Xvnc stands".
+
+---
+
+### C1 — Spec amendments + registry rename
+
+**Purpose**: make the specs say `gui` before code does.
+
+**Scope**:
+- `docs/specs/window-views.md` — View Registry row `desktop` → `gui`:
+  available when `gui.enabled`; renderer noVNC canvas; status target; pointer
+  to this plan. Migration-map `desktop` row → "superseded by `gui` per
+  26-09-09 plan". R3 gains the host-singleton clause (D8). R6 dot = VNC WS.
+- `docs/specs/surface-layout.md` — "One tile per surface kind" list gains
+  `gui`; § Mobile note that coarse viewers never drive GUI resize.
+- `docs/specs/right-panel.md` surface registry mention if any names
+  `desktop`.
+- New `docs/specs/gui.md` — short: the substrate (host service in `rk-gui`),
+  the switch (D3), the relay path, availability-vs-reachability table (study
+  §1), resize policy (D7), OS split (D5/D6), agent verbs (C4), constitution
+  mapping. Link the study as design authority.
+- `docs/specs/index.md` row for `gui.md`.
+- Close PR #71 with a comment linking the study and this plan.
+
+**Acceptance**: docs only; `fab docs-index` byte-stable; grep for the
+literal `desktop` lens in specs returns only historical notes.
+
+---
+
+### C2 — Backend: the switch, the supervisor, the relay
+
+**Purpose**: everything Go. After this change `rk gui on` yields a live RFB
+socket reachable over an rk WebSocket, and the state stream says so.
+
+**Scope**:
+
+*Settings* — `internal/settings/settings.go`: registry entry `gui.enabled`
+(`boolValue`, default `false`). Appears in `GET/POST /api/settings` and the
+settings dialog automatically. Doctor row `gui: off | on (<backend>, :N,
+WxH, k viewers) | on — not running (<reason>)`.
+
+*Supervisor* — `internal/gui/` (new package) + `cmd/rk/gui.go`:
+- `rk gui on` — writes the setting, then `EnsureGUI()`; on a host with no
+  backend it still enables and prints the install hint (apt
+  `tigervnc-standalone-server` + a WM; macOS: System Settings › General ›
+  Sharing › Screen Sharing).
+- `rk gui off [--yes]` — lists what is running on the display (`ps` filtered
+  by the display's env, or Xvnc's client list) and asks; kills the `rk-gui`
+  session; clears the setting. `--yes` skips the prompt.
+- `rk gui status [--json]`, `rk gui env` (prints `DISPLAY=:N` and the socket
+  path for `eval`).
+- `rk gui supervise host` — the **pane command** of the `rk-gui` sibling
+  session on the rk-daemon socket (mirror `internal/daemon/codeserver.go`:
+  `ensureCodeServerCore`, `CodeServerSessionName`, the exists/externally-managed
+  /spawn ladder, `KillCodeServerSession`). Linux: pick a free display number,
+  create `$XDG_STATE_HOME/run-kit/gui/` 0700, launch `Xvnc` with the D5 flags
+  on `host.sock` (0600), then the WM (probe order: `openbox`, `xfwm4`,
+  `i3`, `kwin_x11`, `x-session-manager`; full DEs wrapped in
+  `dbus-run-session` — the PR #71 ladder), log to the pane, trap and clean the
+  socket on exit. macOS: `supervise` is a no-op sleeper that only logs the
+  Screen Sharing probe result (nothing to spawn; D6).
+- `EnsureGUI()` runs on daemon start **only when `gui.enabled`** (the
+  `ensureCodeServer` boot hook, gated). Never-on-by-default is a unit test.
+
+*Relay* — `api/gui_ws.go`, sibling of `terminals_ws.go`: `GET /ws/gui/{id}`
+upgrades and pipes binary frames ⇄ the backend stream (Linux unix socket;
+macOS `127.0.0.1:5900`). Same discipline as the terminal relay: context
+cancel on disconnect, read/write deadlines, close codes for "disabled",
+"not running", "dial failed"; a Go test that a client disconnect closes the
+backend conn (no orphaned sockets).
+
+*State* — `api/sse.go` gains `gui: [{id, enabled, backend, reachable,
+display, width, height, viewers}]` with a TTL-cached dial probe exactly like
+`codeServerReachable`; `enabled` flips synchronously on the settings POST so
+every tab re-renders the toggle group within one state event.
+
+*Validation* — `id` validated (`host` only in v1) via `internal/validate`.
+
+**Salvage** (reference only): PR #71 `relay.go` VNC proxy loop, WM detection +
+`dbus-run-session` traps, `docs/desktop-streaming.md` troubleshooting table.
+
+**Acceptance** (curl-level, no frontend):
+- fresh host, `rk gui status` → off; `rk doctor` → `gui: off`; state stream
+  has `enabled:false`; no `rk-gui` session exists.
+- `rk gui on` → within 5 s `host.sock` exists, `websocat`/Go test dial to
+  `/ws/gui/host` receives the `RFB 003.008` banner; state stream
+  `enabled:true, reachable:true`.
+- `kill` Xvnc → `reachable:false` within the TTL; supervisor pane shows the
+  exit; `rk gui status` says not running.
+- `rk daemon restart` → session re-ensured, socket answers again.
+- `rk gui off --yes` → session gone, socket gone, `enabled:false`.
+- macOS (manual): with Screen Sharing on, `/ws/gui/host` reaches the ARD
+  handshake; with it off, `reachable:false` and the status names the setting.
+- Go tests: settings default false; boot hook skipped when disabled; relay
+  teardown; probe TTL; `off` refuses without `--yes` when apps are running.
+
+---
+
+### C3 — Frontend: the tile
+
+**Purpose**: the user-facing surface.
+
+**Scope**:
+- `lib/surface-layout.ts`: `gui` in `SurfaceKind`/`ViewName`, `SURFACE_GLYPH`
+  (placeholder `▣` — pick with the user), `SURFACE_LABEL` "GUI",
+  `availableTiles` pushes `gui` **iff** `gui[0]?.enabled` (the payload, not a
+  probe). `degradeLayout` then drops `gui` tiles while off and restores them
+  on re-enable with the option untouched.
+- `lib/keybindings.ts`: `gui-toggle` on `Digit4` (same tiers as 1–3);
+  `lib/window-view.ts` capability helper `hasGui(win, guiState)`.
+- Top bar: `SurfaceToggleGroup` renders the 4th button and menu row from the
+  registry (no special-casing); mobile switch group inherits.
+- Palette: `Toggle GUI`, `Tile: Switch to GUI`, `GUI: Turn on`, `GUI: Turn
+  off` (confirm dialog listing running apps — from `gui[0]` payload fields),
+  `GUI: Fullscreen`, `GUI: Paste clipboard`, `GUI: Lock resolution`,
+  `GUI: Open supervisor logs`, `GUI: Fit / 1:1`.
+- Settings dialog: the registry-driven **GUI** row; the off direction routes
+  through the same confirm.
+- `components/gui-surface.tsx` — peer of `code-surface.tsx`: `@novnc/novnc`
+  `RFB` on a `<canvas>` connecting to `/ws/gui/host`; `scaleViewport` +
+  `resizeSession` per D7 (fine pointer + focused ⇒ `resizeSession`; coarse ⇒
+  `scaleViewport` fit, or `clipViewport` for 1:1 with drag-pan);
+  `qualityLevel`/`compressionLevel` lower on coarse; local cursor on; stop
+  framebuffer requests when the tile is unfocused/hidden. Content states:
+  enabled+reachable ⇒ canvas; enabled+unreachable ⇒ empty state (restart
+  supervisor · open logs · install hint from payload). Connection dot = RFB
+  `connect`/`disconnect` events (R6).
+- Fullscreen verb: `requestFullscreen()` on the tile + `navigator.keyboard
+  .lock()` where present; iPhone falls back to zen (document it in the
+  empty-state tooltip, not a modal).
+- Focus/chords: reuse the code tile's steal-guard and `focus-hop` seams; ⌘K,
+  ⌘1–4, ⌘; stay rk's inside the tile; everything else to the guest.
+- Clipboard: RFB cut-text both ways; paste via palette (user gesture).
+- Tests: Vitest for registry/availability/degradation against mocked `gui`
+  payloads; Playwright capability-gated on `Xvnc` presence (skip cleanly),
+  ungated assertions for button absence/presence off a stubbed stream,
+  375 px + desktop viewports; intent comments per constitution.
+
+**Acceptance**:
+- switch off: no 4th button on any tab, no menu row, ⌘4 inert, `split-h:tty,
+  gui` renders `single:tty`.
+- `rk gui on` from a shell → button appears on the open tab within one state
+  event without reload; toggling it opens a live desktop; zen zooms it; zoom
+  ⛶ works; phone viewport fits without a SetDesktopSize going out (assert on
+  the payload's `width/height`).
+- turn off from the palette → confirm lists apps → button gone, tiles
+  degrade; turn on → layout restored.
+- fullscreen verb enters/exits on Chrome desktop; iPhone shows the zen hint.
+
+---
+
+### C4 — Agent verbs
+
+**Purpose**: agents get a screen they can drive and see.
+
+**Scope** (`cmd/rk/gui.go` additions, all gated on enabled+reachable with
+exit 1 + hint otherwise):
+- `rk gui exec <cmd…>` — run with `DISPLAY` (and `XAUTHORITY` if used) set,
+  inheriting cwd; the `rk code exec` shape.
+- `rk gui shot [--out <png>]` — screenshot the display (`import -window root`
+  or `xwd | convert`; probe what's installed; print the path). macOS: refuse
+  in v1 (view-only mirror of the human's session — D6).
+- `rk agent setup` exports `DISPLAY` into managed panes when enabled
+  (read-time derivation from the supervisor's stamped display, never a hook
+  push — Constitution X).
+- `rk skill gui` topic page (target forms, gating, the screenshot loop,
+  fail-silent rules) + the core-bundle line.
+- `docs/memory` hydrate: new `gui.md` memory file.
+
+**Acceptance**: from a plain pane with the switch on, `rk gui exec chromium
+https://example.com` shows the page in the tile and `rk gui shot` writes a
+PNG of it; with the switch off both exit 1 with the `rk gui on` hint.
+
+---
+
+### C5 — Measure (GATE for C6)
+
+**Purpose**: turn D9 into numbers before spending on a second backend.
+
+**Do**: a Playwright perf spec (skipped on CI without Xvnc) that loads a
+long page in the guest browser, scrolls it via `rk gui exec xdotool`, and
+samples noVNC's frame counter + the relay's bytes/s; record Xvnc CPU from
+`ps`. Run from a laptop and a phone over Tailscale. Write the numbers into the
+`gui.md` memory file with the D9 targets beside them.
+
+**Verdict**: targets met ⇒ C6 is not picked up; missed ⇒ C6.
+
+---
+
+### C6 — KasmVNC backend (conditional)
+
+**Scope**: `backend: kasm` in `internal/gui` — installer rung (`rk gui
+install-kasm`, GitHub release deb, like `rk code-server install`), launch on a
+unix socket with auth + TLS off, a fixed proxied route using the `/code/`
+handler machinery (`api/proxy.go handleCode`), and a `GuiSurface` iframe
+variant selected by the payload's `backend`. Xvnc stays the fallback when the
+deb is absent. macOS unaffected (noVNC canvas).
+
+**Acceptance**: same C3 acceptance on Linux with the iframe variant; C5 spec
+re-run shows the delta.
+
+---
+
+## Constitution mapping
+
+- **I** — argv slices + timeouts everywhere; `id` validated; sockets 0600.
+- **II / X** — nothing stored: enabled is a preference, reachability is a dial
+  probe, running is a session probe; deleting the socket file degrades to
+  "not running".
+- **IV** — no new env keys (socket + display are conventions; `rk gui env`
+  prints them); no new route family beyond `/ws/gui/*` and `/api/gui/*`
+  POSTs; the settings row rides the one registry-driven settings surface.
+- **V** — every verb palette-reachable; ⌘4 is a chord, buttons are the mirror.
+- **VI** — tmux owns Xvnc; the relay reattaches after rk restarts.
+- **IX** — mutations are POST.
+
+---
+
+## Risks
+
+| # | Risk | Mitigation |
+|---|------|------------|
+| 1 | Someone builds a "Start" button on a disabled host | D3 is binding: availability keys off `enabled` in the payload, never off backend presence; C2 unit-tests never-on-by-default |
+| 2 | Two viewers fight over SetDesktopSize | D7 (last-focused fine pointer; coarse never); `Lock resolution` escape hatch |
+| 3 | Kasm spike eats the week | C0 is time-boxed to a day and its output is a paragraph, not code |
+| 4 | Turning off silently kills a user's browser session | Confirm lists running apps; CLI needs `--yes`; supervisor logs the kill |
+| 5 | macOS mirror injects input into the human's session | View-only in v1 (D6): the relay drops RFB pointer/key messages client-side **and** server-side on the macOS backend |
+| 6 | Iframe/canvas swallows rk chords | Reuse code tile's steal-guard + focus-hop; fullscreen + keyboard lock is the deliberate "all keys to guest" mode |
+| 7 | CI lacks Xvnc | Capability-gated e2e (clean skip) + stubbed-stream assertions for the button gate; Go tests carry the relay/probe/switch |
+| 8 | noVNC API drift since PR #71 (1.6 now) | C3 starts with a typings re-derive against the installed version |
+
+---
+
+## Pickup protocol (for the agent taking the next change)
+
+1. Read this plan, the study (`docs/wiki/gui-surface-design-study.html` —
+   open it in a browser or read the HTML), `docs/specs/window-views.md`,
+   `docs/specs/surface-layout.md`, `fab/project/constitution.md`, and the
+   `lenses-and-layout`, `configuration`, `daemon-lifecycle` memory files.
+2. Skim PR #71's branch for the salvage list only — reference, not a base.
+3. Take the lowest-numbered row whose dependencies are **merged** (C0 is a
+   spike: do it in a scratch dir, append the verdict here, no fab change).
+4. `/fab-new <slug>`; cite this plan in the intake; treat the decision log as
+   Certain in SRAD scoring — clarification effort goes to the per-change
+   "pick with the user" items (glyph, WM probe order, confirm copy).
+5. Fill in your row in the tracking table in the same PR; mark Done on merge.
+6. Normal pipeline (`/fab-fff` or stage-by-stage `/fab-continue`).
+
+---
+
+## C0 verdict
+
+*(empty — appended by whoever runs the spike)*

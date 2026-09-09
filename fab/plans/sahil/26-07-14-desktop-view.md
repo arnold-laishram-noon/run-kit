@@ -3,7 +3,7 @@
 **Authored**: 2026-07-14
 **Author**: discussion session with Claude (`/fab-discuss`)
 **Executor**: agents picking up changes one by one, each via the normal fab pipeline
-**Status**: Plan only — no changes drafted yet (change 1 of the stack is drafted separately)
+**Status**: **SUPERSEDED (2026-09-09)** by [`26-09-09-gui-surface.md`](26-09-09-gui-surface.md) — the lens is now the host-singleton `gui` surface (not a per-window desktop lens), gated on an explicit `gui.enabled` switch, with Xvnc replacing Xvfb + x11vnc. Change 1 (`web-view-lens`) shipped; changes 2–4 here are not to be picked up. Kept for the PR #71 salvage analysis.
 
 ## Goal
 
