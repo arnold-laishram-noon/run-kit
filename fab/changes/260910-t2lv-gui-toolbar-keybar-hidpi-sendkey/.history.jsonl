@@ -1,0 +1,3 @@
+{"action":"enter","driver":"fab-new","event":"stage-transition","stage":"intake","ts":"2026-09-10T15:21:45Z"}
+{"args":"Implement V4 from fab/plans/sahil/26-09-10-gui-viewer-ergonomics.md per the combined-execution queue stage S7","cmd":"fab-new","event":"command","ts":"2026-09-10T15:21:45Z"}
+{"delta":"+0.0","event":"confidence","score":4.5,"trigger":"calc-score","ts":"2026-09-10T15:22:53Z"}
