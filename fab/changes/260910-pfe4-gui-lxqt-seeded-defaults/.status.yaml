@@ -17,20 +17,20 @@ plan:
     acceptance_count: 0
     acceptance_completed: 0
 confidence:
-    certain: 3
-    confident: 4
+    certain: 9
+    confident: 1
     tentative: 0
-    unresolved: 1
-    score: 2.4
+    unresolved: 0
+    score: 4.8
     fuzzy: true
     dimensions:
-        signal: 70.0
-        reversibility: 71.3
-        competence: 70.0
-        disambiguation: 68.8
+        signal: 86.0
+        reversibility: 82.5
+        competence: 87.5
+        disambiguation: 84.0
 stage_metrics:
     intake: {started_at: "2026-09-10T15:19:04Z", driver: fab-new, iterations: 1}
 prs: []
 change_type_source: explicit
 # true_impact: lazily created on first stage-finish that computes it (no placeholder here).
-last_updated: 2026-09-10T15:20:37Z
+last_updated: 2026-09-10T23:29:14Z

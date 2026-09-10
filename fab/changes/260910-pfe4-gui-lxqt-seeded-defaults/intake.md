@@ -13,34 +13,18 @@
 > L-D5, L-D6, binding — L-D4 partially Likely, see below) and its § UX /
 > § L2 Do / § L2 Acceptance sections, reproduced here in full.
 
-**Load-bearing gate — read before starting apply.** This change is
-**blocked on a prerequisite that does not yet exist on `origin/main` at
-draft time**: the lxqt plan's § L0 spike verdict. § L0 ("Spike") is *not* a
-fab change — it is a side task the operator runs directly on the VM,
-recording numbers (idle RSS, relay Mbit/s, first-start screenshots, SIGTERM
-behavior, and critically **whether LXQt 0.17 honors `XDG_CONFIG_DIRS` for
-`panel.conf`/`session.conf`/`lxqt.conf`**) as a new `## L0 verdict` section
-appended directly to `fab/plans/sahil/26-09-10-gui-lxqt-desktop.md` on
-`origin/main`, per the plan's own instructions ("commits that edit directly
-to `main` — the convention for plan documents in `fab/plans/sahil/`"). This
-intake is drafted **before** that verdict exists, so it necessarily encodes
-L-D4's `XDG_CONFIG_DIRS` mechanism as the plan's stated default with its
-documented fallback, rather than the verified answer.
-
-**The combined-execution plan enforces this gate operationally, not this
-intake**: per its § Rules, "before spawning S5, check that
-`26-09-10-gui-lxqt-desktop.md` contains a `## L0 verdict` section on
-`origin/main`. Absent ⇒ pause, notify, and resume when it lands." This
-intake being drafted and `ready` does **not** mean S5 may start — the
-operator's spawn-time gate is the actual enforcement point, separate from
-and later than this drafting step. Anyone picking up this change (human or
-agent) MUST verify `## L0 verdict` exists on `origin/main` before beginning
-apply, and MUST read it first: if it says LXQt 0.17 does **not** honor
-`XDG_CONFIG_DIRS` for one or more of the three files, this change's design
-in § What Changes below (the `XDG_CONFIG_DIRS` seed mechanism) is
-**superseded** by the L-D4 fallback (a dedicated `XDG_CONFIG_HOME` plus
-re-exporting the user's real config home as `RK_USER_CONFIG_HOME`) — the
-plan states this fallback is adopted "verbatim, no re-discussion needed."
+**Gate resolved.** `fab/plans/sahil/26-09-10-gui-lxqt-desktop.md` now carries
+a `## L0 verdict` section on `main` (committed 2026-09-10). It **confirms
+L-D4 as written, no fallback needed**: LXQt 0.17.1 keeps a caller-supplied
+`XDG_CONFIG_DIRS` and only *appends* `/etc`, `/etc/xdg`, `/usr/share` when
+missing, so a directory rk prepends stays first in the search order — all
+four seed files (`session.conf`, `panel.conf`, `lxqt.conf`,
+`pcmanfm-qt/lxqt/settings.conf`) were read from the prepended dir with an
+empty `XDG_CONFIG_HOME`. This intake now encodes the verdict's mechanism and
+exact config keys directly (§ What Changes below), not the plan's prior
+"stated default with documented fallback" language. The apply-entry agent
+still confirms the section exists on `origin/main` before starting (§ What
+Changes item 0), as a mechanical check, not because the answer is in doubt.
 
 Waits for S1 (`gui-session-starters-and-wm-verb`) merged — this change needs
 the session-starter D-Bus wrap (a bare `startlxqt` cannot reliably seed and
@@ -63,24 +47,38 @@ make LXQt a real, chosen alternative, and an unseeded LXQt undermines that
 by looking and behaving like a default Linux desktop nobody curated.
 
 **The approach, and why.** Seed LXQt through `XDG_CONFIG_DIRS`, not
-`XDG_CONFIG_HOME` (L-D4 — **Likely, pending § L0 verdict**, see the gate
-above): the supervisor prepends `<state>/run-kit/gui/lxqt/etc` to
-`XDG_CONFIG_DIRS` for the session; seeded files live under
-`…/etc/lxqt/{session.conf,panel.conf,lxqt.conf}` and
-`…/etc/pcmanfm-qt/lxqt/settings.conf`, written when absent (write-once,
-delete-to-re-seed — the same convention G1's IceWM `preferences` file
-established). `XDG_CONFIG_DIRS` (system-default layering) rather than
-`XDG_CONFIG_HOME` (the user's own config home) is chosen specifically so a
-user who also runs LXQt locally keeps their own preferences as overrides,
-and so rk's seed never gets confused with — or silently relocates — the
-user's own chromium/editor profiles the way pointing `XDG_CONFIG_HOME` at
-rk's state dir would. Seed content (L-D5): `session.conf` picks `openbox` as
-the window manager with power-management and screensaver/locker modules
-disabled; `panel.conf` is one bottom panel (menu, two quick-launch buttons
-reusing the G1 launcher's resolved terminal/browser, task bar, tray, a
-minutes-only clock — no seconds); `lxqt.conf` picks a dark theme (exact name
-from the L0 verdict); `pcmanfm-qt/lxqt/settings.conf` sets a solid-color
-desktop (`#3b4252`, rk's existing ground color) with icons off.
+`XDG_CONFIG_HOME` (L-D4 — **Certain, confirmed by the § L0 verdict**): the
+supervisor prepends `<state>/run-kit/gui/lxqt/etc` to `XDG_CONFIG_DIRS` for
+the session; seeded files live under
+`…/etc/lxqt/{session.conf,panel.conf,lxqt.conf}`,
+`…/etc/pcmanfm-qt/lxqt/settings.conf`, and `…/etc/autostart/`, written when
+absent (write-once, delete-to-re-seed — the same convention G1's IceWM
+`preferences` file established). `XDG_CONFIG_DIRS` (system-default layering)
+rather than `XDG_CONFIG_HOME` (the user's own config home) is chosen
+specifically so a user who also runs LXQt locally keeps their own
+preferences as overrides, and so rk's seed never gets confused with — or
+silently relocates — the user's own chromium/editor profiles the way
+pointing `XDG_CONFIG_HOME` at rk's state dir would; the verdict confirms
+this is exactly the mechanism Ubuntu's own `/usr/share` defaults already use.
+Seed content (L-D5, corrected by the verdict): `session.conf` picks
+`openbox` as the window manager with `leave_confirmation=false`,
+`lock_screen_before_power_actions=false` (no power-management or
+screensaver/locker module); `panel.conf` is one bottom panel (menu, one
+quick-launch button seeded as a `.desktop` path reusing the G1 launcher's
+resolved terminal/browser — not a raw `exec=`, which renders no button when
+the binary isn't first resolved — task bar, tray, a minutes-only clock via
+`formatType=custom, useAdvancedManualFormat=true, customFormat=HH:mm` — the
+`timeShowSeconds`/`short-timeonly` combination the plan originally described
+still shows seconds, since "short" is the locale's short time format, not a
+manual one); `lxqt.conf` picks theme `dark` with `icon_theme` probed from
+installed icon themes (`breeze-dark` → `Papirus-Dark` → `Adwaita`, else
+omitted — `lxqt-core` ships none); `pcmanfm-qt/lxqt/settings.conf` sets
+`WallpaperMode=none` (not `color`, which pcmanfm-qt does not recognize as a
+mode name — `none` is the solid-`BgColor` mode) with `BgColor=#3b4252` (rk's
+existing ground color) and icons off (`HideItems=true`,
+`DesktopShortcuts=`); an `autostart/lxqt-xscreensaver-autostart.desktop`
+seed with `Hidden=true` shadows the system one so a user who installs
+`xscreensaver` doesn't get it autostarted under LXQt.
 
 Alternatives the plan rejected and this intake does not reopen: seeding
 XFCE (L-D8 — LXQt is the only seeded DE); a locker/screensaver of any kind
@@ -92,47 +90,76 @@ Backend (`app/backend/`) plus docs.
 
 ### 0. Prerequisite check (apply-entry, before any other task)
 
-The apply-entry agent MUST first confirm `## L0 verdict` exists in
+The apply-entry agent confirms `## L0 verdict` exists in
 `fab/plans/sahil/26-09-10-gui-lxqt-desktop.md` on `origin/main` (`git fetch
 origin && git show origin/main:fab/plans/sahil/26-09-10-gui-lxqt-desktop.md
-| grep -q '^## L0 verdict'`). If absent, **do not proceed** — this is the
-operator's queue-pause condition (combined-execution plan § Rules), and an
-agent picking this change up out-of-band (outside the queue) must escalate
-to the user rather than guess the verdict. If present, read it in full and
-apply any correction it states to items 1–2 below before implementing them
-— the verdict is authoritative over this intake's L-D4-as-written content.
+| grep -q '^## L0 verdict'`) — a mechanical sanity check, since this intake
+was clarified after the verdict landed and already encodes its answer
+(L-D4 confirmed, no fallback) and its exact config keys directly into items
+1–2 below. If the check somehow fails (e.g. a stale `origin` fetch), stop
+and re-sync rather than guess; the verdict content quoted below is
+authoritative and should not drift from what's on `main`.
 
 ### 1. The seed content — `internal/gui/seed_lxqt.go` (new)
 
-Per L-D5, `go:embed` four files (exact key/value content taken from the §
-L0 verdict — this intake reproduces the plan's stated *intent* for each
-file; the verdict supplies the exact config keys that worked on 0.17):
+Per L-D5 as corrected by the § L0 verdict, `go:embed` five files (exact
+key/value content verified on LXQt 0.17.1 and checked for drift against
+lxqt master by the verdict):
 
-- **`session.conf`**: window manager `openbox`; no `lxqt-powermanagement`
-  module; no screensaver/locker module (no `xscreensaver`).
-- **`panel.conf`**: one bottom panel — main menu · quick-launch (terminal,
-  browser, via the G1 launcher's resolved binaries, regenerated on every
-  supervise start exactly like G1's IceWM `toolbar`/`menu` files — the
-  `toolbar` rule from G-D3) · task bar · tray · clock **without seconds**
-  (one repaint a minute).
-- **`lxqt.conf`**: a dark theme from `lxqt-themes` (exact name from the L0
-  verdict — recorded Confident below, pending that verdict).
-- **`pcmanfm-qt/lxqt/settings.conf`**: desktop wallpaper mode `color`, color
-  `#3b4252` (matching rk's existing `xsetroot` ground), desktop icons off.
+- **`etc/lxqt/session.conf`**: `[General] window_manager=openbox
+  leave_confirmation=false lock_screen_before_power_actions=false`;
+  `[Environment] GTK_CSD=0 GTK_OVERLAY_SCROLLING=0`. No
+  `lxqt-powermanagement` module (not in `lxqt-core`); no screensaver/locker
+  module — handled instead by the autostart override below, since
+  `lxqt-xscreensaver-autostart.desktop` ships with `lxqt-session` itself,
+  not as a separate module.
+- **`etc/lxqt/panel.conf`**: one bottom panel (`panels=panel1`,
+  `position=Bottom`, `panelSize=32`, `iconSize=22`, `lineCount=1`) with
+  plugins `mainmenu,quicklaunch,taskbar,tray,statusnotifier,worldclock` —
+  main menu · quick-launch (terminal, browser, seeded as `.desktop` paths
+  reusing the G1 launcher's resolved binaries — `apps\N\desktop=`, regenerated
+  on every supervise start exactly like G1's IceWM `toolbar`/`menu` files,
+  the `toolbar` rule from G-D3; a raw `exec=` entry whose binary isn't first
+  resolved renders no button, per the verdict, so only resolved roles get an
+  entry) · task bar · tray · status-notifier · clock **without seconds**
+  (`formatType=custom, useAdvancedManualFormat=true, customFormat=HH:mm` —
+  one repaint a minute; `formatType=short-timeonly` +
+  `timeShowSeconds=false` does *not* suppress seconds, per the verdict).
+- **`etc/lxqt/lxqt.conf`**: `[General] theme=dark
+  icon_theme=<probed>` — theme name `dark` (from `lxqt-themes`, confirmed);
+  icon theme probed at seed time from `/usr/share/icons`, first hit of
+  `breeze-dark`, `Papirus-Dark`, `Adwaita`, key omitted if none present
+  (`lxqt-core` installs no icon theme itself — without one the panel falls
+  back to text labels, which is an acceptable degrade, not a failure);
+  `[Qt] style=Fusion`.
+- **`etc/pcmanfm-qt/lxqt/settings.conf`**: `[Desktop] WallpaperMode=none
+  BgColor=#3b4252 FgColor=#ffffff HideItems=true DesktopShortcuts=
+  ShowHidden=false` — `none` is pcmanfm-qt's solid-`BgColor` mode; `color` is
+  not a value it recognizes (the plan's original text was wrong on this key;
+  the verdict corrects it).
+- **`etc/autostart/lxqt-xscreensaver-autostart.desktop`**: `Type=Application
+  Name=XScreenSaver (disabled by rk) Exec=xscreensaver -no-splash
+  Hidden=true OnlyShowIn=LXQt;` — an `XDG_CONFIG_DIRS`-seeded autostart entry
+  shadows the system one (`Hidden=true` suppresses it), which is the actual
+  mechanism that keeps a user-installed `xscreensaver` from autostarting
+  under LXQt (there is no separate "locker module" to disable in
+  `session.conf` — the verdict found this was the real mechanism).
 
 ```go
-// SeedLXQtDefaults writes the four seed files under
+// SeedLXQtDefaults writes the five seed files under
 // <state>/run-kit/gui/lxqt/etc/{lxqt/{session,panel,lxqt}.conf,
-// pcmanfm-qt/lxqt/settings.conf} when absent (write-once — a user's own
-// edit to any file persists across restarts; delete the file to re-seed).
-// The panel's quick-launch entries are regenerated on every call from the
-// resolved launcher argv[0] names (rows omitted for a role that did not
-// resolve), matching the IceWM toolbar/menu convention (G-D3). resolved
-// carries the terminal/browser names from gui.ResolveApp (G1/S1's launcher).
+// pcmanfm-qt/lxqt/settings.conf, autostart/lxqt-xscreensaver-autostart.desktop}
+// when absent (write-once — a user's own edit to any file persists across
+// restarts; delete the file to re-seed). The panel's quick-launch entries
+// are regenerated on every call as .desktop-path entries from the resolved
+// launcher (rows omitted for a role that did not resolve), matching the
+// IceWM toolbar/menu convention (G-D3). resolved carries the terminal/
+// browser names from gui.ResolveApp (G1/S1's launcher); icon theme is
+// probed from /usr/share/icons at seed time, not passed in.
 func SeedLXQtDefaults(dir string, resolved LaunchResolution) (seeded bool, err error)
 ```
 
-Tests on a `t.TempDir()`: first call seeds all four files with correct
+Tests on a `t.TempDir()`: first call seeds all five files with correct
 permissions and content (dir `0700`, files `0600`, matching G1's
 `internal/gui/seed.go` convention for the IceWM profile); a user edit to
 `session.conf`/`lxqt.conf` survives a second call byte-identical
@@ -140,7 +167,10 @@ permissions and content (dir `0700`, files `0600`, matching G1's
 plan's exact granularity differs — this intake assumes whole-file write-once
 per the G1 precedent, recorded as an assumption below); `panel.conf`'s
 quick-launch entries track a changed launcher resolution across calls
-(browser absent → present); deleting any one file re-seeds only that file.
+(browser absent → present, seeded as a `.desktop` path); `lxqt.conf`'s
+`icon_theme` reflects whatever the probe finds on the test's fake
+`/usr/share/icons` (present → named, absent → key omitted); deleting any one
+file re-seeds only that file.
 
 ### 2. Supervisor wiring — `cmd/rk/gui_supervise.go`
 
@@ -157,13 +187,9 @@ line (S1 shipped without this segment since seeding did not exist yet; this
 change adds the segment conditionally, when seeding actually occurred or the
 seed dir already exists from a prior run).
 
-**If the § L0 verdict (item 0) says `XDG_CONFIG_DIRS` does *not* work for
-one or more files**, this item is replaced per L-D4's stated fallback: a
-dedicated `XDG_CONFIG_HOME` for the LXQt session plus re-exporting the
-user's real `XDG_CONFIG_HOME` (if any) as `RK_USER_CONFIG_HOME` and
-documenting the substitution — the apply-entry agent implements whichever
-branch the verdict selects and records the choice as a plan Design
-Decision, not a re-opened intake question.
+No fallback branch — the § L0 verdict confirmed `XDG_CONFIG_DIRS` works for
+all seeded files, so `XDG_CONFIG_HOME`/`RK_USER_CONFIG_HOME` (L-D4's
+fallback) is not implemented by this change.
 
 Test: the env var is set exactly for the LXQt rung (both `startlxqt` and
 `lxqt-session` names), absent for every other rung; the seed call happens
@@ -175,28 +201,29 @@ Capability-gated: skip unless `Xtigervnc`, `startlxqt` (or `lxqt-session`),
 and `dbus-run-session` all resolve on PATH. Body (mirroring G1's IceWM
 integration test structure): supervise on a temp state dir with `gui.wm`
 pinned to the LXQt name; assert the `@rk_gui_wm` stamp equals the resolved
-LXQt binary name; assert the four seed files exist with `0600`; assert
+LXQt binary name; assert the five seed files exist with `0600`; assert
 `gui.RunningApps` on a captured `/proc` fixture (or, if run live, the real
 `/proc`) lists none of S1's widened `wmHelperComms` LXQt/dbus names; assert
-a screenshot's pixel at the desktop center is `#3b4256` (or whatever the
-exact hex from L-D5 renders as, allowing for VNC color-depth rounding).
-Never touches the live `rk-gui` session (temp state dir, high display
-number via `gui.FreeDisplay`).
+a screenshot's pixel at the desktop center is `#3b4252` (the verdict's own
+measurement sampled `srgb(59,66,82)` = `0x3b4252`, matching rk's ground
+color; allow for VNC color-depth rounding). Never touches the live
+`rk-gui` session (temp state dir, high display number via `gui.FreeDisplay`).
 
 ### 4. Docs
 
 - `docs/specs/gui.md` § Switching desktops (existing section from S1) gains
-  the seed paragraph: what gets seeded, the write-once/regenerated split,
-  and the "delete the dir to re-seed" rule. If the L0 verdict triggered the
-  `XDG_CONFIG_HOME`/`RK_USER_CONFIG_HOME` fallback, this section documents
-  that mechanism instead (per L-D4's stated fallback plan).
+  the seed paragraph: what gets seeded (the five files), the
+  write-once/regenerated split, and the "delete the dir to re-seed" rule.
+  No `XDG_CONFIG_HOME`/`RK_USER_CONFIG_HOME` fallback to document — the
+  verdict confirmed the primary mechanism works.
 - Memory via hydrate (§ Affected Memory below).
 
 ### Acceptance (from the plan, binding)
 
 - Fresh `<state>/gui/lxqt`, `rk gui wm lxqt --restart` → the tile shows one
-  bottom panel with menu, two quick-launch buttons, task bar, tray, and a
-  minutes-only clock over a solid `#3b4256` desktop with no icons.
+  bottom panel with menu, two quick-launch buttons (terminal and browser,
+  each present only if its role resolved), task bar, tray, and a
+  minutes-only clock over a solid `#3b4252` desktop with no icons.
 - Idle relay traffic over 60 s stays within 2× the IceWM idle figure from
   the § L0 verdict.
 - `rk gui off` confirm lists no `lxqt-*` process (relies on S1's widened
@@ -207,12 +234,14 @@ number via `gui.FreeDisplay`).
 ## Affected Memory
 
 - `run-kit/gui`: (modify) the LXQt seed mechanism (`SeedLXQtDefaults`, the
-  four files, write-once vs. regenerated split), the `XDG_CONFIG_DIRS`
-  wiring (or its `XDG_CONFIG_HOME`/`RK_USER_CONFIG_HOME` fallback, per the
-  verdict), the seeded-defaults segment of the supervisor's WM-found log
-  line; new Design Decision (which of L-D4's two mechanisms the verdict
-  selected, with the rejected alternative noted per the SRAD apply-records
-  rule)
+  five files, write-once vs. regenerated split), the `XDG_CONFIG_DIRS`
+  wiring (confirmed working, no `XDG_CONFIG_HOME` fallback needed), the
+  seeded-defaults segment of the supervisor's WM-found log line; new Design
+  Decision recording L-D4 confirmed as written (the rejected
+  `XDG_CONFIG_HOME`/`RK_USER_CONFIG_HOME` fallback noted per the SRAD
+  apply-records rule), plus the L-D5 corrections (clock format keys,
+  wallpaper mode, quick-launch `.desktop` paths, icon-theme probe, the
+  autostart-shadow mechanism for the locker)
 - `run-kit/daemon-lifecycle`: (modify) the supervisor's start-order gains a
   seed step before starting a session-starter WM
 
@@ -246,26 +275,53 @@ integration test and the live-VM acceptance need it present.
 
 ## Open Questions
 
-None as intake-blocking questions for the *design* — L-D5's seed content is
-fully specified. The one genuine unknown, **whether `XDG_CONFIG_DIRS` works
-for LXQt 0.17's three config files**, is not an open question to ask a
-human about — it is a gate this change cannot even start apply against until
-the § L0 verdict exists on `origin/main` (see the load-bearing note in
-§ Origin above), and once it exists the answer is mechanical: implement
-whichever of L-D4's two branches the verdict names, verbatim, per the plan's
-own instruction that no re-discussion is needed.
+None. The one genuine unknown at draft time — **whether `XDG_CONFIG_DIRS`
+works for LXQt 0.17's config files** — is resolved by the § L0 verdict now
+committed to `main`: it does, for all five seeded files, with no fallback
+needed. The verdict also supplied and corrected the exact config keys
+(§ What Changes item 1), closing the design gaps this intake previously
+deferred (clock format, wallpaper mode key, quick-launch entry shape, icon
+theme).
+
+## Clarifications
+
+### Session 2026-09-10 (fab-clarify pfe4)
+
+The lxqt plan's § L0 verdict (`fab/plans/sahil/26-09-10-gui-lxqt-desktop.md`)
+landed on `main` after this intake was drafted. This session folds its
+findings in, closing the one Unresolved row and correcting four Confident/
+Certain rows the plan itself amended after the spike.
+
+| # | Action | Detail |
+|---|--------|--------|
+| 1 | Resolved (Unresolved → Certain) | `XDG_CONFIG_DIRS` confirmed to work for all seeded files; no `XDG_CONFIG_HOME`/`RK_USER_CONFIG_HOME` fallback implemented |
+| 3 | Corrected | Clock format keys (`formatType=custom, useAdvancedManualFormat=true, customFormat=HH:mm`, not `timeShowSeconds`); wallpaper mode `none` + `BgColor` (not `color`, which pcmanfm-qt doesn't recognize) |
+| 4 | Resolved (Confident → Certain) | Theme name `dark`; `icon_theme` set by a probe over `/usr/share/icons` (`breeze-dark` → `Papirus-Dark` → `Adwaita` → omitted), since `lxqt-core` ships no icon theme |
+| 9 | Added | Quick-launch entries seeded as `.desktop` paths, not raw `exec=` (a verdict finding — an unresolved raw `exec=` renders no button) |
+| 10 | Added | Locker suppression is an `autostart/…Hidden=true` seed shadowing the system autostart entry, not a `session.conf` module — the verdict's actual mechanism |
+
+Also updated (non-Assumptions-table): § Origin's load-bearing gate note (now
+resolved, not blocking); § Why's L-D4 grading (Likely → Certain); § What
+Changes items 0–4 (prerequisite check simplified to a mechanical re-verify,
+seed content and Go doc comment carry the five verified files and corrected
+keys, the supervisor-wiring fallback branch removed, the integration test's
+hex typo `#3b4256` corrected to the verdict's measured `#3b4252`, docs
+paragraph drops the fallback-documentation branch); § Open Questions closed
+out.
 
 ## Assumptions
 
 | # | Grade | Decision | Rationale | Scores |
 |---|-------|----------|-----------|--------|
-| 1 | Unresolved | Whether LXQt 0.17 honors `XDG_CONFIG_DIRS` for `panel.conf`/`session.conf`/`lxqt.conf` (deciding whether L-D4's primary mechanism or its `XDG_CONFIG_HOME`/`RK_USER_CONFIG_HOME` fallback applies) | Deferred — the plan's own § L0 spike has not yet run/landed at draft time; this is a hard external-verification gate, not something an agent can infer from the codebase or the constitution. The combined-execution plan's operator enforces the gate at spawn time (pause until `## L0 verdict` exists on `origin/main`); this intake documents both branches so apply proceeds mechanically once the verdict lands | S:30 R:20 A:10 D:15 |
-| 2 | Certain | Seed via `<state>/run-kit/gui/lxqt/etc` prepended to `XDG_CONFIG_DIRS` (assuming the verdict confirms this branch), write-once per file, regenerated panel quick-launch entries — mirrors the G1 IceWM seed precedent exactly | Plan L-D4 (primary branch) and L-D5; the code-server `settings.json` write-once precedent G1 already established | S:85 R:70 A:85 D:80 |
-| 3 | Certain | Seed content: `session.conf` → `openbox` WM, no powermanagement/locker; `panel.conf` → one bottom panel (menu, 2 quick-launch, taskbar, tray, minutes-only clock); `lxqt.conf` → a dark theme; `pcmanfm-qt/lxqt/settings.conf` → solid `#3b4256`, icons off | Plan L-D5 verbatim; the relay pays per changed rect, a seconds clock/locker/icons are all documented anti-patterns for this use | S:90 R:75 A:85 D:90 |
-| 4 | Confident | The exact dark theme name from `lxqt-themes` is whatever the § L0 verdict records — this intake cannot name it in advance | Plan L-D5: "a dark theme from `lxqt-themes` (L0 picks)" — explicitly deferred to the verdict, but the *category* of decision (a dark theme, from the stock package) is settled | S:60 R:80 A:55 D:65 |
+| 1 | Certain | LXQt 0.17 honors `XDG_CONFIG_DIRS` for all five seeded files (`session.conf`, `panel.conf`, `lxqt.conf`, `pcmanfm-qt/lxqt/settings.conf`, the autostart override) — L-D4's primary mechanism, no `XDG_CONFIG_HOME`/`RK_USER_CONFIG_HOME` fallback needed | Clarified — resolved by the § L0 verdict now committed to `main`: `startlxqt` only *appends* system dirs to a caller-supplied `XDG_CONFIG_DIRS`, so a prepended seed dir stays first; verified live with an empty `XDG_CONFIG_HOME` and all four original files (plus the autostart shadow) honored | S:95 R:90 A:95 D:95 |
+| 2 | Certain | Seed via `<state>/run-kit/gui/lxqt/etc` prepended to `XDG_CONFIG_DIRS`, write-once per file, regenerated panel quick-launch entries — mirrors the G1 IceWM seed precedent exactly | Plan L-D4 (confirmed, no longer conditional) and L-D5; the code-server `settings.json` write-once precedent G1 already established; verdict confirms the mechanism is exactly the one Ubuntu's own `/usr/share` defaults use | S:90 R:75 A:90 D:85 |
+| 3 | Certain | Seed content, corrected per the verdict: `session.conf` → `openbox` WM + `leave_confirmation=false` + `lock_screen_before_power_actions=false`, no powermanagement module; `panel.conf` → one bottom panel (menu, 2 quick-launch, taskbar, tray, statusnotifier, minutes-only clock via `formatType=custom, useAdvancedManualFormat=true, customFormat=HH:mm`); `lxqt.conf` → `theme=dark`; `pcmanfm-qt/lxqt/settings.conf` → `WallpaperMode=none` + `BgColor=#3b4252`, icons off | Plan L-D5 as corrected by the § L0 verdict: `color` is not a valid `WallpaperMode` (use `none`, which is the solid-`BgColor` mode); the plan's `timeShowSeconds`/`short-timeonly` combination does not suppress seconds — `formatType=custom` does; every key verified live on 0.17.1 and checked for drift against lxqt master | S:95 R:80 A:90 D:90 |
+| 4 | Certain | Theme name `dark` (from `lxqt-themes`); `icon_theme` set by probing `/usr/share/icons` at seed time for the first of `breeze-dark`, `Papirus-Dark`, `Adwaita`, key omitted if none present (`lxqt-core` ships no icon theme) | Clarified — the § L0 verdict names `dark` as the theme used and confirms `icon_theme` is read from the seed layer (probe: removing the key drops the quick-launch icon to a text label); `lxqt-core`'s lack of a bundled icon theme means a probe, not a fixed name, is the correct mechanism | S:90 R:85 A:90 D:85 |
 | 5 | Certain | Seeding runs only when the resolved WM is a member of the LXQt session-starter names (`startlxqt`, `lxqt-session`) — never for IceWM, bare WMs, or XFCE | Plan L-D1/L-D8 — LXQt is the one seeded DE; XFCE stays reachable but unseeded | S:90 R:85 A:90 D:90 |
 | 6 | Certain | File permissions and write-once granularity mirror G1's IceWM seed exactly (dir `0700`, files `0600`, whole-file write-once, delete-to-re-seed) | No LXQt-specific permission requirement is stated in the plan; the existing G1 precedent is the established pattern this change extends | S:75 R:80 A:85 D:80 |
-| 7 | Confident | The supervisor's env-var wiring (`XDG_CONFIG_DIRS=<dir>:${XDG_CONFIG_DIRS:-/etc/xdg}`) is set only for the LXQt rung, using the same "env builder is already rung-specific" mechanism the `ICEWM_PRIVCFG` precedent established | Plan L2 Do item 2 states this explicitly; mirrors the existing rung-specific env pattern | S:70 R:80 A:80 D:70 |
+| 7 | Certain | The supervisor's env-var wiring (`XDG_CONFIG_DIRS=<dir>:${XDG_CONFIG_DIRS:-/etc/xdg}`) is set only for the LXQt rung, using the same "env builder is already rung-specific" mechanism the `ICEWM_PRIVCFG` precedent established, with no conditional fallback branch to implement | Plan L2 Do item 2 states this explicitly; mirrors the existing rung-specific env pattern; the verdict removes the need for a second (fallback) code path, simplifying the decision | S:85 R:85 A:85 D:85 |
 | 8 | Confident | The integration test extends/parallels the S1-era `cmd/rk/gui_supervise_integration_test.go` structure (capability-gated on Xtigervnc + startlxqt + dbus-run-session) rather than living in `internal/gui/xvnc_integration_test.go` as the plan's original text suggests | Follows S1's own established deviation from the plan's original file placement (the stamp and `runGuiSuperviseLinux` are `package main`) — same reasoning applies here | S:60 R:80 A:70 D:60 |
+| 9 | Certain | Quick-launch entries are seeded as `.desktop` paths (`apps\N\desktop=/usr/share/applications/<name>.desktop`), not raw `exec=` lines, and only for a role that actually resolved | Clarified — the § L0 verdict found a raw `exec=` entry whose binary wasn't on PATH (`x-www-browser` in its test env) rendered no button at all; `.desktop` paths are the reliable form and match how `qterminal.desktop` was seeded successfully | S:90 R:85 A:90 D:85 |
+| 10 | Certain | The "no locker" requirement is implemented as an `autostart/lxqt-xscreensaver-autostart.desktop` seed with `Hidden=true`, shadowing the system one — not a `session.conf` module toggle | Clarified — the § L0 verdict found `lxqt-xscreensaver-autostart.desktop` ships with `lxqt-session` itself (not a separate `lxqt-powermanagement`-style module), and confirmed the `XDG_CONFIG_DIRS`-seeded autostart entry with `Hidden=true` suppresses it (probe: hiding `lxqt-runner.desktop` the same way stopped that process from starting) | S:90 R:80 A:90 D:85 |
 
-8 assumptions (5 certain, 2 confident, 0 tentative, 1 unresolved).
+10 assumptions (9 certain, 1 confident, 0 tentative, 0 unresolved).
