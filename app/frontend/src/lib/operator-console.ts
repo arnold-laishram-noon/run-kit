@@ -25,7 +25,9 @@ import { urlSegmentToWindowId } from "@/lib/router-url";
  *    to the single layout-mounted console, which forks on form factor:
  *    desktop drives the ⌘J machine, mobile navigates to the operator
  *    window's terminal route. An event, not a callback chain: the entry
- *    points live in route shells the layout does not compose directly.
+ *    points live in route shells the layout does not compose directly. The
+ *    request is buffered until the console handles it, so a dispatch fired
+ *    before the lazy console mounts is drained on mount rather than lost.
  *  - The ⌘J two-state machine (`rest | open`, focus and drawer linked) — the
  *    desktop console's controlling state, shared between the top-bar omnibox
  *    and the drawer (module slot, the open-state idiom).
@@ -75,11 +77,42 @@ export type OperatorConsoleRequest = {
    *  the text is seeded into the operator route's compose-strip draft instead
    *  of auto-sending. */
   send?: string;
+  /** The body segment to select on open. Desktop applies it to the drawer's
+   *  Terminal|Activity state (and bypasses the already-on-operator-route hint
+   *  — the Activity view is not visible on the desktop route itself); mobile
+   *  maps `activity` to the operator route's `?tab=activity` search param.
+   *  Absent = no segment change. */
+  segment?: "terminal" | "activity";
 };
 
-/** Dispatch a console request to the layout-mounted OperatorConsole. */
+/** The most recent request, buffered until the console handles it. The
+ *  console is lazy-mounted behind Suspense, so a cold-load event can fire
+ *  before its listener attaches; an unhandled request stays here for the
+ *  console to drain on mount, and a live console clears it synchronously
+ *  inside its event handler. */
+let pendingConsoleRequest: OperatorConsoleRequest | null = null;
+
+/** Dispatch a console request to the layout-mounted OperatorConsole. The
+ *  request is buffered until handled, so a dispatch that precedes the lazy
+ *  console's mount is replayed when its listener attaches — the seam is
+ *  replayable, never lost. */
 export function requestOperatorConsole(req: OperatorConsoleRequest): void {
+  pendingConsoleRequest = req;
   document.dispatchEvent(new CustomEvent<OperatorConsoleRequest>(OPERATOR_CONSOLE_EVENT, { detail: req }));
+}
+
+/** Clear the buffered request — the console calls this once it has handled a
+ *  request, so a later mount cannot replay an already-handled one. */
+export function clearPendingConsoleRequest(): void {
+  pendingConsoleRequest = null;
+}
+
+/** Take and clear the buffered request, if any — the console's mount drain
+ *  for requests that fired before its listener attached. */
+export function drainPendingConsoleRequest(): OperatorConsoleRequest | null {
+  const req = pendingConsoleRequest;
+  pendingConsoleRequest = null;
+  return req;
 }
 
 /** Type guard for the event detail (tolerant of foreign CustomEvents). */
