@@ -20,9 +20,8 @@ toolkit*, and shll.ai becomes a permanent redirect host.
 **Status (2026-09-10)**: Phase 0 underway. Approach B chosen (product rename,
 substrate kept). D1–D4 and D13 confirmed by Sahil in the thread; D5–D12 are
 the plan's proposals and are open until marked confirmed. S1 done (operator,
-direct git op, no fab change). S2 pipeline done, PR [hexokit-site#1](https://github.com/sahil87/hexokit-site/pull/1)
-open draft, not yet merged (fab change `1ha7`, hexokit-site). Next pickup is
-S3 ∥ S4 once S2 merges.
+direct git op, no fab change). S2 done — [hexokit-site#1](https://github.com/sahil87/hexokit-site/pull/1)
+merged, hexokit.com live over HTTPS (unannounced). Next pickup is S3 ∥ S4.
 
 ---
 
