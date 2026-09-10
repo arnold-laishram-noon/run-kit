@@ -4,9 +4,11 @@
 > Child of [`26-09-09-gui-surface.md`](26-09-09-gui-surface.md) (the parent
 > plan — protocol, switch, relay, tile, agent verbs, perf). This doc owns one
 > thing the parent left open ("the WM probe order … proposed — C2"): what a
-> person sees when the tile opens on a host with no apps running, and how the
-> host gets there. It does not reopen D1–D10 of the parent; it sits beside
-> C6 (bandwidth) and shares no files with it except `docs/specs/gui.md`.
+> person sees when the tile opens on a host with no apps running, how the
+> host gets there, and (G3) how an agent drives that desktop from a shell the
+> way it drives the code and web surfaces. It does not reopen D1–D10 of the
+> parent; it sits beside C6 (bandwidth) and shares no files with it except
+> `docs/specs/gui.md`.
 > Authority for design: the spike results in § Spike verdict below, plus
 > [`docs/specs/gui.md`](../../../docs/specs/gui.md) § The supervisor.
 
@@ -23,7 +25,7 @@ ground (C5 painted it) and a right-click menu whose entries point at
 desktop, nothing is reachable by tap on a phone, and a missing browser fails
 silently.
 
-**Status (2026-09-10)**: spike done (§ Spike verdict). G1 in progress (`260910-2jl3-gui-desktop-icewm-and-launcher`); G2 not started.
+**Status (2026-09-10)**: spike done (§ Spike verdict). G1 Done (PR #905 merged). G2 in progress. G3 (agent verbs) added 2026-09-10 from the bronze-crane thread — not started; the operator picks it up once G2 is merged.
 
 ---
 
@@ -84,6 +86,11 @@ plan's D9 budget. XFCE/LXQt stay reachable through `x-session-manager` or the
 | G-D7 | **Running-apps list excludes WM helpers by name**: `icewm-session, icewm, icewmbg, icewmtray, icesound, icewmhint, openbox, xfwm4, i3, kwin_x11, xsetroot` on top of the existing pid excludes. Not by ancestry — apps launched from the IceWM toolbar are children of `icewm` and must stay listed | the off-confirm dialog and `rk gui status` list apps; `icewm ×1` in that list is noise, and ancestry-based exclusion would hide real apps |
 | G-D8 | **Tile behavior**: while `reachable && wm == ""`, a one-line strip above the canvas — `No window manager on the GUI host · <install line> · then Restart supervisor` — with a Copy button (fine and coarse) and a per-viewer dismiss (localStorage). No "no apps yet" overlay: with IceWM the taskbar and toolbar are the affordance. Palette gains `GUI: Open terminal` and `GUI: Open browser` (visible when `enabled && reachable`), calling G-D5 and toasting the hint on `ok:false` | Constitution IV/V: the strip is the only new UI, keyboard/palette parity for the launch actions; a phone gets a tappable route that does not depend on a 536-px taskbar |
 | G-D9 | **Out of scope**: auto-installing anything; a theme editor; XFCE/LXQt as recommended rungs (they remain reachable via `x-session-manager` or `gui.wm`); per-viewer window managers; touching the ladder's macOS branch (mirror mode has no WM) | keep the surface minimal; the parent's D10 |
+| G-D10 | **Agent verbs wrap X11 tools, they do not reimplement them.** `xdotool` is the input and window engine, `import`/`scrot`/`xwd` stay the capture ladder, `xclip`/`xsel` the clipboard, `xdg-open` the opener. Every verb probes with `LookPath` and refuses with the existing apt hint when the tool is missing; rk installs nothing. What rk adds is one gate, one exit-code contract, one coordinate space, and the semantics xdotool lacks (window inventory as rows, wait-for, scaled capture) | Constitution III; the `code`/`web` surfaces got first-class verbs because they had no native channel — X11 has one; the toolkit `install-composition` standard |
+| G-D11 | **One coordinate space: display pixels.** Input verbs take display-pixel coordinates. `rk gui shot` prints the PNG path on stdout (unchanged contract) and, when `--scale`/`--max-width` shrinks the capture, the capture geometry and scale factor on stderr (`geometry 1920x1080 scale 0.5`). The agent maps back by dividing; rk never guesses which screenshot a click refers to | the datum-only stdout rule; a full 1080p PNG per loop iteration is the dominant token cost for a vision loop, and a hidden implicit scale would make clicks silently wrong |
+| G-D12 | **Resize is a loop hazard, so the agent can lock it.** `rk gui lock` / `rk gui unlock` set the same pin the palette's `GUI: Lock resolution` sets (parent D7), so a fine-pointer viewer resizing the tile mid-loop cannot move the agent's coordinates. `rk gui status` shows `locked` | parent D7 makes the desktop follow the last fine-pointer viewer; a loop that screenshots, thinks, then clicks is exactly the window where that resize lands |
+| G-D13 | **The human's pointer wins.** The relay already parses RFB client messages (`gui_filter.go`); it records the last human `PointerEvent`/`KeyEvent` time per display. Input verbs (`click`, `type`, `key`, `scroll`, `move`, `focus`) refuse with exit 1 and `human input <N>s ago — retry or pass --force` when a human drove the display within the last `guiHumanInputGrace = 3s`. `--force` overrides. Reads and launches never refuse | the skill page's "don't fight their pointer" gotcha becomes mechanical; the human is watching the same pixels and a fight is the worst failure mode |
+| G-D14 | **Out of scope for G3**: session recording (ffmpeg `x11grab`), an accessibility-tree reader (AT-SPI) for element-level targeting, browser automation inside rk (the agent uses Playwright/CDP against a browser `launch --cdp` started), OCR, and any per-agent virtual display. Each is a later plan if the loop proves it necessary | keep G3 to what the recipe needs today; the parent's D10 |
 
 ---
 
@@ -205,20 +212,62 @@ includeprog icewm-menu-fdo --no-sep-others --seps
 Deleting the directory restores every default on the next start. The `rk
 skill gui` topic page documents the directory and the two file classes.
 
+### Agent verbs (G3)
+
+All verbs share the existing gate (`gui is off` / `gui is on but not running`
+⇒ exit 1 with the hint), the datum-only stdout rule, and exit `2` for usage.
+Coordinates are display pixels (G-D11). Every verb that needs an X tool
+probes it first and fails with the tool's apt hint (`sudo apt install xdotool`,
+`imagemagick`, `xclip`).
+
+```sh
+rk gui windows                       # ID  PID  GEOMETRY      TITLE            (active window marked *)
+rk gui windows --json                # [{id, pid, x, y, width, height, title, active, app}]
+rk gui focus <id|--title <substr>>   # raise + focus; exit 1 when no match / ambiguous
+rk gui click <x> <y> [--right|--middle|--double] [--window <id>]   # --window makes x y window-relative
+rk gui move <x> <y>
+rk gui scroll <up|down|left|right> [--n 3] [--at x y]
+rk gui type <text> | --stdin         # unicode-safe (xdotool type --delay 12 via stdin), newline = Return
+rk gui key <chord> [<chord>…]        # xdotool keysym spelling: ctrl+l, Return, alt+F4
+rk gui shot [--out p.png] [--scale 0.5 | --max-width 1280] [--window <id>]   # stdout: path; stderr: geometry WxH scale S
+rk gui wait --window <title-substr> [--timeout 10s]   # exit 0 when a window matches, 1 on timeout
+rk gui wait --stable [--interval 500ms] [--timeout 10s]  # two consecutive captures identical (hash)
+rk gui clip get | set <text> | set --stdin              # CLIPBOARD selection via xclip/xsel
+rk gui open <url|file>               # xdg-open on the display, detached; prints `started <pid> on :N`
+rk gui launch browser --cdp [--port 9222]   # G1's launcher + --remote-debugging-port; prints the port
+rk gui lock | unlock                 # the D7 resolution pin; `rk gui status` shows `locked`
+```
+
+Refusals specific to G3 (all exit 1, stderr): `human input 2s ago — retry or
+pass --force` (G-D13, input verbs only); `xdotool not found — sudo apt install
+xdotool`; `no window matches "…"`; `--window <id>: not a window`.
+
+`rk gui status` gains `locked` and, when a human drove the display within the
+grace window, `human input 1s ago`.
+
+The `rk skill gui` topic page rewrites the § Recipe around these verbs:
+`launch browser --cdp` + Playwright/CDP for browser work, `windows` →
+`focus` → `click`/`type`/`key` → `wait --stable` → `shot --scale 0.5` for
+everything else, `lock` for the loop's duration, `clip set` + `key ctrl+v`
+instead of typing paragraphs.
+
 ---
 
 ## Change breakdown
 
-Two fab changes, sequential. G2 depends on G1's `wm` stream field and the
+Three fab changes, sequential. G2 depends on G1's `wm` stream field and the
 launch endpoint, so it cannot start until G1 is on `main`; it is small enough
 that a single change would also fit, but the parent plan's backend/frontend
 split (C2/C3) kept reviews focused and the Playwright half is verifiable
-against a stubbed stream alone. Prefer two.
+against a stubbed stream alone. G3 (agent verbs) waits for G2 only to keep
+the `gui` CLI file set and the spec's § Agent verbs from being edited by two
+changes at once; it has no code dependency on G2.
 
 | # | Slug (suggested) | Depends on | Size | Change folder | PR | Status |
 |---|------------------|-----------|------|---------------|----|--------|
-| G1 | `gui-desktop-icewm-and-launcher` | parent C5 merged (it is) | M | 260910-2jl3-gui-desktop-icewm-and-launcher | https://github.com/sahil87/run-kit/pull/905 | in review (PR #905) |
-| G2 | `gui-desktop-tile-strip-and-palette` | G1 merged | S | | | not started |
+| G1 | `gui-desktop-icewm-and-launcher` | parent C5 merged (it is) | M | 260910-2jl3-gui-desktop-icewm-and-launcher | https://github.com/sahil87/run-kit/pull/905 | Done |
+| G2 | `gui-desktop-tile-strip-and-palette` | G1 merged | S | | | in progress |
+| G3 | `gui-agent-verbs-input-and-windows` | G2 merged | M | | | not started — operator pickup after G2 |
 
 ---
 
@@ -328,6 +377,91 @@ hides it and it stays hidden across reload; restore PATH, `rk gui restart` →
 strip gone, `GUI: Open terminal` from the palette opens a terminal on the
 desktop; `GUI: Open browser` toasts the chromium hint. `just test` green.
 
+### G3 — Agent verbs: windows, input, wait, capture upgrades, clipboard, open, lock
+
+**Purpose**: G-D10 through G-D13. After this change an agent drives the host
+desktop from a shell with the same shape it drives the code and web surfaces:
+a gate, a few verbs with one contract, and a recipe that does not depend on
+blind sleeps or knowing xdotool.
+
+**Do** (`app/backend/`, `docs/`):
+1. `internal/gui/xdo.go` (new) — argv builders for every xdotool call
+   (`search --onlyvisible`, `getwindowname`, `getwindowgeometry --shell`,
+   `getwindowpid`, `getactivewindow`, `windowactivate --sync`, `mousemove`,
+   `click`, `type --delay 12 --file -`, `key --clearmodifiers`) plus the
+   `Windows` parser (rows from the search/geometry output). Pure functions,
+   table-tested; no X server in unit tests.
+2. `cmd/rk/gui_windows.go` — `rk gui windows [--json]` (columns
+   `ID PID GEOMETRY TITLE`, active row marked, `app` from `/proc/<pid>/comm`)
+   and `rk gui focus <id|--title>` (ambiguous substring ⇒ exit 1 listing the
+   matches). Reuses `gui_exec.go`'s display/env seams.
+3. `cmd/rk/gui_input.go` — `click`, `move`, `scroll`, `type`, `key`. `type`
+   feeds xdotool via stdin (unicode-safe, no argv quoting), translates `\n`
+   to `Return`; `--window <id>` on `click` makes coordinates window-relative
+   via `getwindowgeometry`. All run through `exec.CommandContext` with the
+   existing 10 s tmux-class timeout. G-D13 guard before every input verb:
+   `GET /api/gui/{id}` (or the tmux option, see 6) → `human_input_ago`;
+   refuse under `guiHumanInputGrace` unless `--force`.
+4. `cmd/rk/gui_shot.go` — `--scale <f>` / `--max-width <px>` (mutually
+   exclusive; ImageMagick `-resize`, `scrot`'s `-t` is not used — resize is a
+   post-step via `convert` when `import` is absent), `--window <id>`
+   (`import -window <id>` / `xwd -id`); stderr line `geometry WxH scale S`
+   always printed. stdout stays the path only.
+5. `cmd/rk/gui_wait.go` — `wait --window <substr>` (poll `search --name`
+   every 250 ms) and `wait --stable` (two consecutive captures with equal
+   SHA-256, captured at `--scale 0.25` to keep it cheap). `--timeout`
+   default 10 s; exit 1 with `timed out after 10s` on expiry.
+6. Relay: `api/gui_filter.go` / `gui_ws.go` — on each parsed client
+   `PointerEvent`/`KeyEvent` update `hub.guiHumanInputAt[id]` (an in-memory
+   timestamp — ephemeral, in-flight, exactly Constitution X's carve-out).
+   Expose as `human_input_ago_ms` on `GET /api/gui/{id}` and the `event: gui`
+   entry; `rk gui status` renders `human input 1s ago`. Zero when no viewer
+   has driven the display or the relay restarted.
+7. `cmd/rk/gui_clip.go` — `clip get|set` via `xclip -selection clipboard`
+   then `xsel --clipboard`; `set --stdin`. Missing both ⇒ `sudo apt install
+   xclip`.
+8. `cmd/rk/gui_open.go` — `open <url|file>` = `xdg-open` detached (the
+   `exec --detach` path); file paths are made absolute first.
+9. `cmd/rk/gui_launch.go` — `--cdp [--port N]` for the browser role: appends
+   `--remote-debugging-port=N` (and `--user-data-dir` under
+   `$XDG_STATE_HOME/run-kit/gui/cdp-<N>/` so a running profile does not
+   swallow the flag), waits ≤ 5 s for the port to accept, prints
+   `cdp http://127.0.0.1:N` on stdout after the `started` line. Refuses for
+   the terminal role (usage).
+10. `cmd/rk/gui.go` — `lock` / `unlock` set and clear the D7 pin the
+    palette uses (whatever state the tile reads — the `@rk_gui_*` option or
+    the settings key C3 chose; the intake confirms which), `status` shows
+    `locked`.
+11. Tests: Go unit for every argv builder, the windows parser, the guard
+    (fake `human_input_ago`), the scale flag arithmetic, `type` stdin
+    translation; integration (`xvnc_integration_test.go`, gated on
+    `Xtigervnc` + `xdotool` + `icewm-session`): launch `xterm`, `windows`
+    lists it, `focus` + `type "echo hi"` + `key Return`, `wait --stable`,
+    `shot --scale 0.5 --window` yields a PNG of the window's scaled size.
+12. Docs: `docs/site/skill/gui.md` (the new verbs, the rewritten recipe, the
+    guard gotcha, the coordinate rule), `docs/specs/gui.md` § Agent verbs,
+    `rk gui --help` groups the verbs (`display: env exec launch open`,
+    `look: shot windows wait`, `drive: focus click move scroll type key clip`,
+    `guard: lock unlock`), memory via hydrate.
+
+**Acceptance** (this VM, IceWM desktop from G1):
+- `rk gui launch terminal` → `rk gui windows` lists the xterm with a pid and
+  geometry; `rk gui focus --title xterm`; `rk gui type 'echo hello'`;
+  `rk gui key Return`; `rk gui wait --stable`; `rk gui shot --scale 0.5`
+  prints a path and `geometry 1920x1080 scale 0.5` on stderr; the PNG is
+  960×540 and shows `hello`.
+- With a browser tab open in the tile, move the mouse over the desktop, then
+  within 3 s run `rk gui click 10 10` → exit 1 `human input 1s ago — retry or
+  pass --force`; `--force` clicks.
+- `rk gui lock` → resizing the tile from a laptop no longer changes
+  `rk gui status` geometry; `unlock` restores D7.
+- `rk gui clip set 'a long paragraph'` then `key ctrl+v` in the terminal pastes
+  it; `rk gui open https://example.com` starts the browser (or exits 1 with
+  the browser hint when none is installed).
+- `PATH` without `xdotool` → every drive verb exits 1 with the apt hint;
+  `shot` and `launch` still work.
+- `go test ./...` and `just test` green.
+
 ---
 
 ## Constitution mapping
@@ -341,7 +475,8 @@ desktop; `GUI: Open browser` toasts the chromium hint. `just test` green.
 | V Keyboard-First | both launch actions are palette rows; the strip's actions are buttons reachable by Tab |
 | VII Convention Over Configuration | the ladder needs nothing; `gui.wm` defaults to `""`; the profile seeds itself |
 | X Hooks Carry Only the Underivable | `@rk_gui_wm` is written by the supervisor (rk's own process), not an agent hook; everything else derives per tick |
-| Toolkit `install-composition` | probe, degrade, hint — no package edge, no `apt` run by rk |
+| Toolkit `install-composition` | probe, degrade, hint — no package edge, no `apt` run by rk; G3's xdotool/xclip are probed the same way |
+| X (G3) | the only new pushed fact is the relay's last-human-input timestamp — in-flight, in-memory, exists nowhere on disk; window inventory, geometry, and pids derive from X at call time |
 
 ## Risks
 
@@ -353,8 +488,12 @@ desktop; `GUI: Open browser` toasts the chromium hint. `just test` green.
 | 4 | The strip steals vertical space from the canvas and shifts SetDesktopSize | the fit subtracts the strip; the strip only exists in the bare case, which is the state we are steering users out of |
 | 5 | `x-terminal-emulator` resolves to a terminal that ignores `DISPLAY` env or needs D-Bus (gnome-terminal) | the ladder prefers plain X terminals first; gnome-terminal is last |
 | 6 | Reordering the ladder changes the desktop for existing hosts that have both openbox and icewm | that is the intent; `gui.wm=openbox` pins the old behavior |
+| 7 | (G3) `xdotool type` mangles non-ASCII or fast input in some apps | stdin feed with `--delay 12`; `clip set` + `key ctrl+v` is the documented path for anything longer than a line |
+| 8 | (G3) window titles change while the agent works (browser tabs), so `--title` matches drift | `windows --json` returns stable X ids; the recipe resolves once and uses the id |
+| 9 | (G3) the human-input guard has false positives from a viewer's idle mouse drift | 3 s grace is short; `--force` exists; the guard never applies to reads or launches |
+| 10 | (G3) `--cdp` on an already-running browser profile is ignored by Chromium | a dedicated `--user-data-dir` per port; the verb waits for the port and fails loudly otherwise |
 
-## Pickup protocol (for the agent taking G1 or G2)
+## Pickup protocol (for the agent taking G2 or G3)
 
 1. Read this file in full, then the parent plan's § Decision log and § C5
    verdict, `docs/specs/gui.md`, `fab/project/constitution.md`, and the
@@ -365,6 +504,10 @@ desktop; `GUI: Open browser` toasts the chromium hint. `just test` green.
    (`tmux -L rk-daemon list-windows -t rk-jobs` shows a perf job).
 4. Fill your row in § Change breakdown when you create the change; mark Done
    when merged; add the pointer row to the parent plan in the same PR.
+5. G3 starts only after G2 is merged (shared `gui` CLI files and spec
+   section). Before G3's input verbs, read `docs/site/skill/gui.md` as it
+   stands — the rewritten recipe must keep every existing verb's contract
+   (`env`, `exec`, `shot` stdout, exit codes) byte-compatible.
 
 ## Spike re-run recipe
 
