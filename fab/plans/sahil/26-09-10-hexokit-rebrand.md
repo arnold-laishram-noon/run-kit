@@ -20,7 +20,9 @@ toolkit*, and shll.ai becomes a permanent redirect host.
 **Status (2026-09-10)**: Phase 0 underway. Approach B chosen (product rename,
 substrate kept). D1–D4 and D13 confirmed by Sahil in the thread; D5–D12 are
 the plan's proposals and are open until marked confirmed. S1 done (operator,
-direct git op, no fab change). S2 in progress (fab change `1ha7`, hexokit-site). Next pickup is S3 ∥ S4 once S2 merges.
+direct git op, no fab change). S2 pipeline done, PR [hexokit-site#1](https://github.com/sahil87/hexokit-site/pull/1)
+open draft, not yet merged (fab change `1ha7`, hexokit-site). Next pickup is
+S3 ∥ S4 once S2 merges.
 
 ---
 
@@ -146,7 +148,7 @@ block can run in parallel. Agents: fill folder/PR when you create the change.
 | # | Repo | Slug (suggested) | Depends on | Size | Scope | PR | Status |
 |---|------|------------------|-----------|------|-------|----|--------|
 | S1 | hexokit-site (new) | *(git op, no fab change)* | — | S | `git clone --mirror sahil87/shll.ai` → push to new `sahil87/hexokit-site` (create with `gh auth switch --user sahil87`). Disable the copied cron workflows until S3 lands so they don't scaffold a second run-kit tree | — | **done** — repo created private, 40 branches mirrored (PR hidden-refs rejected as expected), `Refresh: Help`/`Refresh: README` workflows disabled |
-| S2 | hexokit-site | `hexokit-domain-and-deploy` | S1 | S | CNAME → `hexokit.com`; Namecheap DNS → Pages (A/AAAA + `www` CNAME); verify the domain on the `sahil87` account; `site:` in astro.config; deploy workflow green on the new repo. Site is live but unannounced | [hexokit-site#1](https://github.com/sahil87/hexokit-site/pull/1) | **in progress** — Pages enabled on the new repo (repo flipped public: the free plan has no private Pages), custom domain `hexokit.com` set, `site:`/CNAME/robots.txt flipped, DNS records applied out of band. Remaining: HTTPS enforce once the cert issues; account-level domain verification (GitHub UI) |
+| S2 | hexokit-site | `hexokit-domain-and-deploy` | S1 | S | CNAME → `hexokit.com`; Namecheap DNS → Pages (A/AAAA + `www` CNAME); verify the domain on the `sahil87` account; `site:` in astro.config; deploy workflow green on the new repo. Site is live but unannounced | [hexokit-site#1](https://github.com/sahil87/hexokit-site/pull/1) (draft) | **pipeline done, PR open** — repo flipped public (free plan has no private Pages), custom domain `hexokit.com` set on Cloudflare (not Namecheap — DNS was already on Cloudflare), `hexokit.dev` 301s to `hexokit.com` via Cloudflare redirect, `site:`/CNAME/robots.txt flipped, first deploy green. Not yet merged. Remaining: HTTPS enforcement once GitHub issues the cert (`gh api -X PUT repos/sahil87/hexokit-site/pages -F https_enforced=true` as sahil87), account-level domain verification (GitHub UI TXT record), then merge #1 |
 | S3 | hexokit-site | `hexokit-site-structure` | S2 | M | D7 URL scheme: slug table gets `hexokit` → output `/docs/`, **source repo still `sahil87/run-kit`** (one field flips in X2); companions unchanged at root slugs; `/toolkit/` from getting-started; re-enable both crons with the new map; nav `Docs · Toolkit · Desktop · GitHub`; llms.txt, JSON-LD, OG, favicon regen | | not started |
 | S4 | hexokit-site | `hexokit-landing` | S2 | L | D6 landing page + design iteration (§ Site shape). Hand-written, so it is on-brand from day one even while `/docs/` still reads "run-kit" | | not started |
 | S5 | hexokit-site | `hexokit-install-script` | S3 | S | D10: `/install` served from the same script with the product-first default; the `install-composition` Policy B text prepared for C1 | | not started |
