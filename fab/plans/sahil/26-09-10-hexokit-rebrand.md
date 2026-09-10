@@ -38,9 +38,13 @@ The Phase 1 gate is open. Next pickup is S5.
   (a Hexo blog-generator installer); GitHub org, crates.io free. **Homebrew:
   `hexokit` exists in neither homebrew-core nor casks nor any indexed tap
   (checked 2026-09-10), so the tap formula `sahil87/tap/hexokit` is
-  claimable now; the unprefixed `brew install hexokit` resolves to it once the
-  tap is tapped, and stays unambiguous unless someone lands `hexokit` in core.
-  Conversely homebrew-core already ships a *different* `run-kit`
+  claimable now. Plain `brew install hexokit` on an untapped machine does
+  **not** work for any tap formula — unprefixed names resolve only against
+  homebrew-core and already-added taps; there is no global tap-name registry.
+  Making the short form work needs a homebrew-core submission (stable release,
+  OSS license, notability ≈ 75 stars / 30 forks) — a possible later row, not
+  part of this plan. Nobody holds `hexokit` in core today, so that path is
+  open. Conversely homebrew-core already ships a *different* `run-kit`
   (Esubaalew/run, "Universal multi-language runner and smart REPL", 0.10.0) —
   so today an unprefixed `brew install run-kit` installs a stranger's tool.**
   Ownable in weeks.
