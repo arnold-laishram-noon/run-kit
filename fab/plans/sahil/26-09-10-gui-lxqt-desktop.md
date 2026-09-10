@@ -16,7 +16,7 @@ package, runs one rk command, and gets a seeded LXQt desktop that behaves
 under the relay like the IceWM one — solid ground, no locker, no compositor,
 no idle screen churn — with IceWM one command away again.
 
-**Status (2026-09-10)**: not started. L0 (spike) first; L1 and L2 follow.
+**Status (2026-09-10)**: not started. Run order is § Execution order: L0 ∥ L1 first, then L2 ∥ L3 (L2 also gated on the L0 verdict).
 
 ---
 
@@ -142,11 +142,51 @@ pays for it").
 | L2 | `gui-lxqt-seeded-defaults` | L0 verdict, L1 merged | M | | | not started |
 | L3 | `gui-desktop-picker` | L1 merged (∥ L2) | S | | | not started |
 
-L1 is useful alone: it makes any pinned DE actually start (D-Bus) and gives
-the switch a command. L2 is the LXQt-specific seed and depends on what L0
-learns about `XDG_CONFIG_DIRS` and the 0.17 config keys. L3 is the frontend
-picker (L-D9) and needs only L1's candidate list; it can run beside L2.
-Three changes, not one, so a wrong L-D4 guess costs only L2 and the
+The four steps are **not** in numeric order of dependency; the table above
+lists them by what they are, the block below by when they run. Sizes are
+pipeline gut-feel.
+
+### Execution order (for the operator — run it as written)
+
+```
+        ┌── L0 spike ──────────────┐
+start ──┤                          ├──> L2 seed ──┐
+        └── L1 verb + D-Bus wrap ──┤              ├──> done
+                                   └──> L3 picker ┘
+```
+
+| Step | Run | Waits for | Parallel with | Gate to pass before starting |
+|---|---|---|---|---|
+| 1a | **L0** spike | nothing | L1 | this VM has sudo (`sudo -n true`); the live `rk-gui` session is not being measured (`tmux -L rk-daemon list-windows -t rk-jobs` shows no perf job) |
+| 1b | **L1** `gui-session-starters-and-wm-verb` | nothing (parent G3 is merged) | L0 | — |
+| 2a | **L2** `gui-lxqt-seeded-defaults` | **L1 merged AND § L0 verdict written** | L3 | the verdict's line on `XDG_CONFIG_DIRS` decides the seed mechanism (L-D4 or its fallback) and supplies the exact 0.17 config keys — L2's intake quotes both |
+| 2b | **L3** `gui-desktop-picker` | **L1 merged** (needs `IsSessionStarter` and the candidate labels) | L2 | — |
+| 3 | done | L2 and L3 merged | — | run § Acceptance of L2 and L3 on this VM once, in that order, and set every row's Status to Done |
+
+**How each step is launched**:
+
+- **L0** is not a fab change. The operator (or a spawned agent) runs § L0's
+  *Do* list directly on this VM, appends § L0 verdict to this file (numbers,
+  the config keys that worked, the `XDG_CONFIG_DIRS` answer, a one-line
+  decision for L-D4), and commits that edit **directly to `main`** — the
+  convention for plan documents in `fab/plans/sahil/`. The spike's
+  `sudo apt install --no-install-recommends lxqt-core` stays installed
+  afterwards; L2's acceptance needs it.
+- **L1, L2, L3** are fab changes: `/fab-new <slug> Plan:
+  fab/plans/sahil/26-09-10-gui-lxqt-desktop.md -- implement <Lx> per the
+  plan's § <Lx> section and § Pickup protocol`, then the pipeline to a PR.
+  Each change's PR fills its table row and, on merge, its Status.
+- **Never start L2 before the L0 verdict exists** — even if L1 is merged. If
+  L0 is blocked (no sudo, no spare display), L3 can still proceed after L1;
+  L2 waits.
+- If L0's verdict says LXQt 0.17 ignores `XDG_CONFIG_DIRS`, L2's intake
+  adopts the L-D4 fallback verbatim and adds the `RK_USER_CONFIG_HOME` line
+  to § UX → Docs; no re-discussion is needed.
+
+Why the split: L1 is useful alone — it makes any pinned DE actually start and
+gives the switch a command. L2 is the LXQt-specific seed and depends on what
+L0 learns. L3 is the frontend picker (L-D9) and needs only L1's candidate
+list. Three changes, not one, so a wrong L-D4 guess costs only L2 and the
 frontend review stays separate, as with the parent's G2.
 
 ---
@@ -198,6 +238,34 @@ L2) with `rk gui status` reading `startlxqt (session)`; `rk gui wm auto
 with the apt line; `--force` pins and the supervisor logs the fallback;
 `go test ./...` and `just test` green.
 
+### L2 — LXQt seeded defaults
+
+**Do**:
+1. `internal/gui/seed_lxqt.go` (new) — `go:embed` the four files (keys from
+   the L0 verdict); `SeedLXQtDefaults(dir, resolved)` writes them when
+   absent under `<state>/run-kit/gui/lxqt/etc/…`, regenerates only the
+   panel's quick-launch entries from the G1 launcher resolution (the
+   `toolbar` rule from G-D3). Tests on a temp dir.
+2. `cmd/rk/gui_supervise.go` — when the resolved WM is `startlxqt` (or
+   `lxqt-session`), seed, then set `XDG_CONFIG_DIRS=<dir>:${XDG_CONFIG_DIRS:-/etc/xdg}`
+   in the WM env (the icewm rung's `ICEWM_PRIVCFG` precedent — the env
+   builder is already rung-specific). Log `defaults <dir>, seeded` on first
+   start.
+3. Integration test (`xvnc_integration_test.go`, gated on `Xtigervnc` +
+   `startlxqt` + `dbus-run-session`): supervise on a temp state dir, assert
+   the `@rk_gui_wm` stamp is `startlxqt`, the four files exist, a
+   `RunningApps` scan lists none of the L-D6 names, and a screenshot's pixel
+   at the desktop center is `#3b4252`.
+4. Docs: spec § Switching desktops gains the seed paragraph and the
+   "delete the dir to re-seed" rule; memory via hydrate.
+
+**Acceptance**: fresh `<state>/gui/lxqt`, `rk gui wm lxqt --restart` → the
+tile shows one bottom panel with menu, two quick-launch buttons, task bar,
+tray, and a minutes-only clock over a solid `#3b4252` desktop with no icons;
+idle relay traffic over 60 s stays within 2× the IceWM idle figure from L0;
+`rk gui off` confirm lists no `lxqt-*` process; a hand-edited
+`…/etc/lxqt/panel.conf` survives `rk gui restart`.
+
 ### L3 — The desktop picker (Settings row + `GUI: Desktop…`)
 
 **Do**:
@@ -227,34 +295,6 @@ Desktop shows `Auto (ladder)`, `IceWM`, `LXQt`, `Other…`; choosing `LXQt`
 and `Restart` brings up the LXQt desktop in the tile; `Cmd+K` → `GUI:
 Desktop…` → `IceWM` → `Restart` brings IceWM back; with `lxqt-core` removed
 the LXQt row is absent and the footer shows the apt line. `just test` green.
-
-### L2 — LXQt seeded defaults
-
-**Do**:
-1. `internal/gui/seed_lxqt.go` (new) — `go:embed` the four files (keys from
-   the L0 verdict); `SeedLXQtDefaults(dir, resolved)` writes them when
-   absent under `<state>/run-kit/gui/lxqt/etc/…`, regenerates only the
-   panel's quick-launch entries from the G1 launcher resolution (the
-   `toolbar` rule from G-D3). Tests on a temp dir.
-2. `cmd/rk/gui_supervise.go` — when the resolved WM is `startlxqt` (or
-   `lxqt-session`), seed, then set `XDG_CONFIG_DIRS=<dir>:${XDG_CONFIG_DIRS:-/etc/xdg}`
-   in the WM env (the icewm rung's `ICEWM_PRIVCFG` precedent — the env
-   builder is already rung-specific). Log `defaults <dir>, seeded` on first
-   start.
-3. Integration test (`xvnc_integration_test.go`, gated on `Xtigervnc` +
-   `startlxqt` + `dbus-run-session`): supervise on a temp state dir, assert
-   the `@rk_gui_wm` stamp is `startlxqt`, the four files exist, a
-   `RunningApps` scan lists none of the L-D6 names, and a screenshot's pixel
-   at the desktop center is `#3b4252`.
-4. Docs: spec § Switching desktops gains the seed paragraph and the
-   "delete the dir to re-seed" rule; memory via hydrate.
-
-**Acceptance**: fresh `<state>/gui/lxqt`, `rk gui wm lxqt --restart` → the
-tile shows one bottom panel with menu, two quick-launch buttons, task bar,
-tray, and a minutes-only clock over a solid `#3b4252` desktop with no icons;
-idle relay traffic over 60 s stays within 2× the IceWM idle figure from L0;
-`rk gui off` confirm lists no `lxqt-*` process; a hand-edited
-`…/etc/lxqt/panel.conf` survives `rk gui restart`.
 
 ---
 
@@ -291,3 +331,6 @@ idle relay traffic over 60 s stays within 2× the IceWM idle figure from L0;
 3. L0 runs on throwaway displays only — never the live `rk-gui` session.
 4. Fill your row in § Change breakdown; mark Done when merged; add a pointer
    row to the parent plan in the same PR.
+5. Start only the step § Execution order allows: check its *Waits for* and
+   *Gate* columns first. L0's verdict is committed directly to `main`; the
+   three fab changes go through PRs.
