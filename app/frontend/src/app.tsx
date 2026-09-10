@@ -107,6 +107,8 @@ import {
   armGraceMask,
   tearDownMask,
   confirmSwitchArrived,
+  forceSwitchArrived,
+  hasCountedIncomingBytes,
   abandonSwitchFeedback,
   subscribeMaskState,
   getMaskState,
@@ -1212,8 +1214,8 @@ function AppShell() {
   // `Layout: Restore` entries need to OBSERVE it (label gating) and TRIGGER it
   // (the focused-slot toggle — 260819-qwr7 R7). The component registers its
   // toggle into this ref and reports flips through `onZoomChange`, so the
-  // palette list rebuilds on every zoom change. Not lifted: keying
-  // SurfaceLayout per window keeps the reset semantics where the state lives.
+  // palette list rebuilds on every zoom change. Not lifted: SurfaceLayout's
+  // per-window reset effect keeps the reset semantics where the state lives.
   const layoutZoomToggleRef = useRef<(() => void) | null>(null);
   const [layoutZoomed, setLayoutZoomed] = useState(false);
 
@@ -1477,8 +1479,8 @@ function AppShell() {
   );
 
   // Focused tile (260812-wfic R2/R8): SurfaceLayout owns the focused SLOT as
-  // transient state (the zoom precedent — the per-window reset comes free
-  // from its `${server}:${windowId}` key) and reports the focused KIND up via
+  // transient state (the zoom precedent — the per-window reset comes from its
+  // `[server, windowId]` reset effect) and reports the focused KIND up via
   // `onFocusedKindChange`; the shell mirrors only the kind — it's all the
   // `ttyOnly` dispatcher gate and the `Tile: Focus <Surface>` palette
   // entries need. On mobile the single VISIBLE slot counts as focused (the
@@ -1968,6 +1970,24 @@ function AppShell() {
       // callback can never navigate the user back off their chosen route or
       // toast about a switch they abandoned.
       if (windowParamRef.current !== target.windowId) return;
+      // SSE already reports the target ACTIVE — the switch DID confirm, but the
+      // writeback (the normal event-driven clearer) can be suppressed for the
+      // whole confirmation window (`dialogOpenRef` — e.g. a dialog held open
+      // >5s over a confirmed switch; rework SF7), or deliberately held the
+      // intent because no incoming byte had been counted yet. Not a failure:
+      // clear the intent silently — no toast, no navigation. The teardown here
+      // is UNCONDITIONAL (`forceSwitchArrived`, not the byte-gated
+      // `confirmSwitchArrived`): after the confirmation window has elapsed with
+      // the target active, a mask whose byte-driven lift path never fired must
+      // never stay up — a stuck input-blocking mask is the worst outcome the
+      // design forbids. This rescue runs BEFORE the `bounceDisarmed` check
+      // below: a POST-200 disarms the BOUNCE, never the rescue.
+      if (activeWindowRef.current?.windowId === target.windowId) {
+        pendingClickRef.current = null;
+        clearPendingSwitchTracking();
+        forceSwitchArrived();
+        return;
+      }
       // Freshness-gate the verdict (260823-ke9i): a failure is only rendered
       // from evidence that POST-DATES the click. A frozen pre-click snapshot
       // (post-sleep half-open socket) or a disconnected socket re-arms the
@@ -1993,18 +2013,6 @@ function AppShell() {
           return;
         }
       }
-      const active = activeWindowRef.current;
-      // SSE already reports the target ACTIVE — the switch DID confirm, but the
-      // writeback (the normal event-driven clearer) can be suppressed for the
-      // whole confirmation window (`dialogOpenRef` — e.g. a dialog held open
-      // >5s over a confirmed switch; rework SF7). Not a failure: clear the
-      // intent silently — no toast, no navigation under the dialog.
-      if (active?.windowId === target.windowId) {
-        pendingClickRef.current = null;
-        clearPendingSwitchTracking();
-        confirmSwitchArrived();
-        return;
-      }
       clearPendingSwitchTracking();
       pendingClickRef.current = null;
       // Abandon, don't just unmask (rework G2): a fast POST rejection can land
@@ -2014,6 +2022,7 @@ function AppShell() {
       // rejected, so liftAccepting never opens). Settling the gate too makes
       // the bounce final.
       abandonSwitchFeedback();
+      const active = activeWindowRef.current;
       if (active) {
         // `target.server` — verified equal to the CURRENT route server above,
         // so the callback needs no `server` closure dep (H1: no stale-server
@@ -2251,20 +2260,26 @@ function AppShell() {
       // into the `!urlMatchesPending` clear-and-abandon branch below).
       const urlMatchesPending = isSamePendingTarget(pending, server, windowParam);
       const sseConfirmed = isSamePendingTarget(pending, server, activeWindow.windowId);
+      // SSE confirmation is authoritative for INTENT, but paint feedback stays
+      // byte-driven: until a byte has been counted as the incoming window's,
+      // `confirmSwitchArrived` is a no-op on the gate and the mask (the gate's
+      // 300ms timeout arms the spinner; the first counted write lifts it), and
+      // the tracked confirmation timer is the ONLY path to the unconditional
+      // `forceSwitchArrived` rescue. So a confirmation that lands before the
+      // byte keeps BOTH the intent and its tracking: clearing them here would
+      // leave a timeout-armed mask with no lift when bytes never come. The
+      // next SSE tick after the byte (or the timer itself) resolves it.
+      if (sseConfirmed && urlMatchesPending && !hasCountedIncomingBytes()) return;
       if (sseConfirmed || !urlMatchesPending) {
         pendingClickRef.current = null;
-        // The switch resolved (confirmed, or superseded by a newer nav): stop
-        // tracking so the confirmation timer never fires a spurious late bounce
-        // and any grace mask's cancel is released (260715-38kg).
+        // The switch resolved (confirmed with a counted byte, or superseded by
+        // a newer nav): stop tracking so the confirmation timer never fires a
+        // spurious late bounce and any grace mask's cancel is released.
         clearPendingSwitchTracking();
-        // SSE confirmation is the AUTHORITATIVE "arrived" signal — settle any
-        // still-pending gate as first-write and lift any mask (260715-38kg). The
-        // receipt-time `notifyFirstWrite` lift covers the common case, but on a
-        // same-session switch tmux's redraw can complete BEFORE the gate's
-        // `openForNotify` (so those bytes were filtered out as outgoing), leaving
-        // no later write to fire the lift; the gate would then time out and arm
-        // the mask even though the switch DID land. `confirmSwitchArrived` cancels
-        // that pending timeout AND clears any mask already showing.
+        // A same-session switch whose tmux redraw completed BEFORE
+        // `openForNotify` counts that receipt at the POST's resolution (the
+        // in-flight receipt), so the confirmation here lands after the counted
+        // byte in the landed-fast case.
         //
         // UNCONFIRMED clear (`!urlMatchesPending` — browser Back/Forward away
         // from a pending target; rework SF5): abandon the switch's feedback —
@@ -5086,10 +5101,15 @@ function AppShell() {
               briefly flash the Dashboard). */}
           {windowParam ? (
             <SurfaceLayout
-              // Keyed by server:window so a window switch REMOUNTS the grid —
-              // its hide-never-unmount set, zoom, and ratio-drag state are
-              // per-window (the RightPanel keying precedent).
-              key={`${server}:${windowParam}`}
+              // Keyed by SERVER only: a same-server window switch re-renders
+              // the mounted grid with a new `windowId` prop — the tty tile's
+              // TerminalClient (xterm instance + relay stream) must survive so
+              // the relay's same-session ride and deferred-reset/clear designs
+              // apply. Per-window transient state (zoom, focused slot, the
+              // hide-never-unmount set, find, page title, progress) resets by
+              // a `[server, windowId]` effect inside the component; non-tty
+              // tiles remount via `windowId` in their own keys.
+              key={server}
               // The rendered layout: the payload's `@rk_win_layout` value,
               // overlaid by the optimistic `pendingLayout` while a verb's
               // POST is in flight.
@@ -5097,6 +5117,12 @@ function AppShell() {
               server={server}
               windowId={windowParam}
               sessionName={sessionName ?? ""}
+              // A UI-initiated switch records its intent (`pendingClickRef`)
+              // in the same tick as the navigate, before this render: only then
+              // may the tty tile arm its deferred buffer clear. A tmux/SSE-
+              // driven URL writeback carries no intent — the attached client
+              // already redrew, so the clear must stay off.
+              clearOnWindowChange={isSamePendingTarget(pendingClickRef.current, server, windowParam)}
               // The payload's window record: the code tile reads the shared
               // code root (`codeRootFor`), the web tile the active web tab.
               window={effectiveWindow}

@@ -13,6 +13,15 @@ import { ProgressAddon } from "@xterm/addon-progress";
 import { TerminalClient, SCROLLBACK_DESKTOP, SCROLLBACK_MOBILE } from "./terminal-client";
 import { COARSE_POINTER_QUERY } from "@/hooks/use-coarse-pointer";
 import type { OpenStreamOpts, RelayStream } from "@/lib/relay-mux";
+import { notifyFirstWrite } from "@/lib/window-transition";
+
+// The switch-receipt seam is module-global; spy on it so the receipt-source
+// tests can assert WHICH terminal reports (the real function is a no-op here —
+// no switch is ever armed in this file).
+vi.mock("@/lib/window-transition", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@/lib/window-transition")>();
+  return { ...mod, notifyFirstWrite: vi.fn() };
+});
 
 // ---------------------------------------------------------------------------
 // RelayMux mock — the terminals-mux transport (change 260717-803u-relay-mux).
@@ -103,6 +112,7 @@ vi.mock("@xterm/xterm", () => ({
       dispose: vi.fn(),
       focus: vi.fn(),
       reset: vi.fn(),
+      clear: vi.fn(),
       write: vi.fn(),
       scrollToBottom: vi.fn(),
       cols: 80,
@@ -516,6 +526,7 @@ function runRafCallbacks() {
 
 type TerminalSpies = {
   reset: ReturnType<typeof vi.fn>;
+  clear: ReturnType<typeof vi.fn>;
   write: ReturnType<typeof vi.fn>;
 };
 
@@ -799,6 +810,7 @@ describe("TerminalClient connection identity — (server, owning session), not w
     windowId: string;
     server?: string;
     onSessionNotFound?: () => void;
+    clearOnRide?: boolean;
   };
 
   /** Rerenderable harness so tests can change session/window/server props. */
@@ -813,6 +825,7 @@ describe("TerminalClient connection identity — (server, owning session), not w
             server={p.server ?? "default"}
             wsRef={wsRef}
             onSessionNotFound={p.onSessionNotFound}
+            clearOnRide={p.clearOnRide}
             scrollLocked={false}
           />
         </FocusedTerminalProvider>
@@ -857,7 +870,7 @@ describe("TerminalClient connection identity — (server, owning session), not w
 
     // Same-session window switch: tmux select-window moves the attached PTY in
     // place — the stream must survive.
-    view.rerender(renderAt({ sessionName: "sess", windowId: "@1" }));
+    view.rerender(renderAt({ sessionName: "sess", windowId: "@1", clearOnRide: true }));
     await act(async () => {});
 
     expect(st1.closeSpy).not.toHaveBeenCalled();
@@ -879,6 +892,176 @@ describe("TerminalClient connection identity — (server, owning session), not w
       runRafCallbacks();
     });
     expectWritten(term, "more");
+  });
+
+  it("a same-session ride arms a deferred buffer CLEAR — run once, before the first post-switch chunk (immediate path)", async () => {
+    const { view, renderAt } = createHarness({ sessionName: "sess", windowId: "@0" });
+    await flushInit();
+    const st1 = lastStream();
+    const term = terminalSpies();
+
+    act(() => {
+      st1.emitOpened();
+      st1.emitData("@0-scrollback"); // consume the deferred reset
+    });
+    expect(term.reset).toHaveBeenCalledTimes(1);
+    // Cross a frame boundary so the immediate-write flood guard resets.
+    act(() => {
+      runRafCallbacks();
+    });
+
+    // Same-session switch: rides the live stream and arms the deferred clear.
+    view.rerender(renderAt({ sessionName: "sess", windowId: "@1", clearOnRide: true }));
+    await act(async () => {});
+    expect(st1.setWindowIdSpy).toHaveBeenCalledWith("@1");
+    expect(term.clear).not.toHaveBeenCalled(); // armed, not yet fired
+
+    // The first inbound chunk after the switch (small → immediate path) runs
+    // the clear in the same tick, BEFORE the write — never reset() on a ride.
+    act(() => {
+      st1.emitData("r");
+    });
+    expect(term.clear).toHaveBeenCalledTimes(1);
+    expect(term.clear.mock.invocationCallOrder[0]).toBeLessThan(
+      writeOrderOf(term, "r"),
+    );
+    expect(term.reset).toHaveBeenCalledTimes(1); // no reset on a ride
+  });
+
+  it("the ride's deferred clear runs inside the flush before the write (coalesced path), exactly once", async () => {
+    const { view, renderAt } = createHarness({ sessionName: "sess", windowId: "@0" });
+    await flushInit();
+    const st1 = lastStream();
+    const term = terminalSpies();
+
+    act(() => {
+      st1.emitOpened();
+      st1.emitData("@0-scrollback");
+    });
+    act(() => {
+      runRafCallbacks();
+    });
+
+    view.rerender(renderAt({ sessionName: "sess", windowId: "@1", clearOnRide: true }));
+    await act(async () => {});
+
+    // A large redraw chunk (> IMMEDIATE_WRITE_MAX_BYTES) coalesces: no clear
+    // and no write at receipt time…
+    const redraw = new Uint8Array(4096).fill(120);
+    term.write.mockClear();
+    act(() => {
+      st1.emitData(redraw);
+    });
+    expect(term.clear).not.toHaveBeenCalled();
+    expect(term.write).not.toHaveBeenCalled();
+
+    // …the clear runs at the top of the flush (same frame as the write).
+    act(() => {
+      runRafCallbacks();
+    });
+    expect(term.clear).toHaveBeenCalledTimes(1);
+    expect(term.clear.mock.invocationCallOrder[0]).toBeLessThan(
+      writeOrderOf(term, redraw),
+    );
+    expect(term.reset).toHaveBeenCalledTimes(1);
+
+    // Exactly once: later chunks never re-clear.
+    act(() => {
+      runRafCallbacks();
+      st1.emitData("tail");
+    });
+    expect(term.clear).toHaveBeenCalledTimes(1);
+  });
+
+  it("a stream re-open before the first post-switch chunk supersedes the pending clear — the deferred reset runs instead", async () => {
+    const { view, renderAt } = createHarness({ sessionName: "sess", windowId: "@0" });
+    await flushInit();
+    const st1 = lastStream();
+    const term = terminalSpies();
+
+    act(() => {
+      st1.emitOpened();
+      st1.emitData("@0-scrollback");
+    });
+    act(() => {
+      runRafCallbacks();
+    });
+
+    // Ride to @1 (arms the clear), then a socket drop re-opens the stream
+    // before any chunk arrives — onOpened arms the deferred reset and drops
+    // the pending clear.
+    view.rerender(renderAt({ sessionName: "sess", windowId: "@1", clearOnRide: true }));
+    await act(async () => {});
+    act(() => {
+      st1.emitOpened();
+    });
+
+    act(() => {
+      st1.emitData("redraw");
+    });
+    expect(term.reset).toHaveBeenCalledTimes(2); // the re-open's reset fired
+    expect(term.clear).not.toHaveBeenCalled(); // the ride's clear was dropped
+    expect(term.reset.mock.invocationCallOrder[1]).toBeLessThan(
+      writeOrderOf(term, "redraw"),
+    );
+  });
+
+  it("does NOT arm the clear on a tmux-driven ride (clearOnRide false) — the attached client already redrew, so the next chunk must not wipe it", async () => {
+    const { view, renderAt } = createHarness({ sessionName: "sess", windowId: "@0" });
+    await flushInit();
+    const st1 = lastStream();
+    const term = terminalSpies();
+
+    act(() => {
+      st1.emitOpened();
+      st1.emitData("@0-scrollback");
+    });
+    act(() => {
+      runRafCallbacks();
+    });
+
+    // The URL followed a tmux select-window (SSE writeback): no pending click
+    // intent, so the route passes no clearOnRide.
+    view.rerender(renderAt({ sessionName: "sess", windowId: "@1" }));
+    await act(async () => {});
+    expect(st1.setWindowIdSpy).toHaveBeenCalledWith("@1");
+
+    act(() => {
+      st1.emitData("r");
+    });
+    expect(term.clear).not.toHaveBeenCalled();
+    expect(term.reset).toHaveBeenCalledTimes(1);
+    expectWritten(term, "r");
+  });
+
+  it("does NOT arm the clear while the connection is unresolved — the windowId change reconnects instead", async () => {
+    const { view, renderAt } = createHarness({ sessionName: "", windowId: "@0" });
+    await flushInit();
+    const st1 = lastStream();
+    const term = terminalSpies();
+
+    act(() => {
+      st1.emitOpened();
+      st1.emitData("cold");
+    });
+    act(() => {
+      runRafCallbacks();
+    });
+
+    // Unresolved (sessionName ""): a windowId change falls back to
+    // windowId-based identity and reconnects — no ride, no clear.
+    view.rerender(renderAt({ sessionName: "", windowId: "@1" }));
+    await act(async () => {});
+    expect(st1.closeSpy).toHaveBeenCalled();
+    const st2 = lastStream();
+    expect(st2).not.toBe(st1);
+
+    act(() => {
+      st2.emitOpened();
+      st2.emitData("fresh");
+    });
+    expect(term.clear).not.toHaveBeenCalled();
+    expect(term.reset).toHaveBeenCalledTimes(2); // both opens reset; never cleared
   });
 
   it("closes the old stream and opens exactly one new one on a cross-session switch, with the deferred reset before the new stream's first write", async () => {
@@ -1628,5 +1811,66 @@ describe("TerminalClient ctrl-wheel/pinch font zoom (260823-cwvv R7)", () => {
     // Crossing the accumulated threshold steps once.
     fireEvent(terminalDiv, new WheelEvent("wheel", { deltaY: -40, ctrlKey: true, bubbles: true, cancelable: true }));
     expect(Number(getByTestId("font-size").textContent)).toBe(before + 1);
+  });
+});
+
+describe("TerminalClient switch-receipt source — exactly one terminal reports notifyFirstWrite", () => {
+  function renderWith(switchReceiptSource: boolean | undefined) {
+    return render(
+      <ChromeProvider>
+        <FocusedTerminalProvider>
+          <TerminalClient
+            sessionName="sess"
+            windowId="@0"
+            server="default"
+            wsRef={createWsRef()}
+            scrollLocked={false}
+            switchReceiptSource={switchReceiptSource}
+          />
+        </FocusedTerminalProvider>
+      </ChromeProvider>,
+    );
+  }
+
+  function lastStream(): MockStream {
+    expect(MockStream.instances.length).toBeGreaterThan(0);
+    return MockStream.instances[MockStream.instances.length - 1];
+  }
+
+  beforeEach(() => {
+    stubConnectionEnv();
+    vi.mocked(notifyFirstWrite).mockClear();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it("reports the receipt on each inbound frame when it is the route's receipt source", async () => {
+    renderWith(true);
+    await act(async () => {});
+    await act(async () => {});
+    const st = lastStream();
+    act(() => {
+      st.emitOpened();
+      st.emitData("ok");
+    });
+    expect(notifyFirstWrite).toHaveBeenCalledTimes(1);
+  });
+
+  it("never reports the receipt when it is not the receipt source (the default) — board panes, duplicate tty tiles, the operator console", async () => {
+    renderWith(undefined);
+    await act(async () => {});
+    await act(async () => {});
+    const st = lastStream();
+    act(() => {
+      st.emitOpened();
+      st.emitData("ok");
+      st.emitData("x".repeat(200));
+    });
+    expect(notifyFirstWrite).not.toHaveBeenCalled();
   });
 });

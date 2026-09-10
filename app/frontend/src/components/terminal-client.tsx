@@ -164,6 +164,25 @@ type TerminalClientProps = {
    * The scaffold does no throttling or rendering — consumers own both.
    */
   onProgressChange?: (state: number, value: number) => void;
+  /**
+   * When `true`, this terminal's inbound data frames report the window-switch
+   * first-write receipt (`notifyFirstWrite`) that releases the route's slide
+   * gate and lifts its spinner mask. The receipt is module-global, so exactly
+   * ONE terminal may report it: the terminal route's primary tty tile. Board
+   * panes, duplicate tty tiles, and the operator console leave it unset — their
+   * output must never confirm a switch of the window they are not showing.
+   */
+  switchReceiptSource?: boolean;
+  /**
+   * When `true`, a same-session `windowId` change arms the deferred buffer
+   * clear (`terminal.clear()` before the first post-switch chunk). The route
+   * passes it only for a UI-initiated switch, where the URL changes BEFORE
+   * tmux redraws. On a tmux/SSE-driven switch the attached client has already
+   * painted the new window by the time the URL follows, so arming the clear
+   * then would wipe that content on its next chunk — those rides leave the
+   * buffer alone (the old window's rows stay in scrollback).
+   */
+  clearOnRide?: boolean;
   scrollLocked?: boolean;
   /**
    * Lines of scrollback on the xterm buffer. Absent → device-split default
@@ -201,6 +220,8 @@ export function TerminalClient({
   serializeAddonRef,
   terminalRef: terminalSeamRef,
   onProgressChange,
+  switchReceiptSource = false,
+  clearOnRide = false,
   scrollLocked,
   scrollback,
   transparent = false,
@@ -834,11 +855,37 @@ export function TerminalClient({
   // and the server would SelectWindowInSession it, yanking the pane back).
   const windowIdRef = useRef(windowId);
   windowIdRef.current = windowId;
+  // Read inside the connect effect's data handler without being one of its
+  // deps (a role flip must never tear the stream down).
+  const switchReceiptSourceRef = useRef(switchReceiptSource);
+  switchReceiptSourceRef.current = switchReceiptSource;
+  // Same discipline: the windowId effect reads it, never depends on it.
+  const clearOnRideRef = useRef(clearOnRide);
+  clearOnRideRef.current = clearOnRide;
 
   // The live RelayMux stream handle for the current connection. Held in a ref so
   // the same-session-ride effect below can update its re-open target without
   // being a dependency of (and thus re-running) the connect effect.
   const streamRef = useRef<RelayStream | null>(null);
+
+  // Deferred buffer clear for a same-session ride. Armed by the windowId effect
+  // below when a resolved same-session switch rides the live stream; consumed
+  // once by the connect effect's `consumePendingClear()` immediately before the
+  // first inbound chunk written after the change. Component-scoped (not
+  // effect-scoped like `pendingReset`): the arming seam lives OUTSIDE the
+  // connect effect — the ride's whole point is that the connect effect does
+  // NOT re-run on a same-session windowId change.
+  //
+  // Why `clear()` and never `reset()` on a ride: tmux's in-place redraw
+  // repaints the screen rows only, so without a clear the previous window's
+  // screen lines would sit in xterm's scrollback and find-in-terminal / the ⇩
+  // export would read mixed content. But `reset()` also resets terminal modes
+  // (mouse reporting, bracketed paste, focus events) that tmux believes it
+  // already set on this still-attached client and will not re-send — a fresh
+  // attach re-sends them, an in-place switch does not. Deferring to the first
+  // chunk keeps the no-blank-frame invariant (the old content persists until
+  // the redraw paints in the same tick).
+  const pendingClearRef = useRef(false);
 
   // Same-session windowId ride: keep the live stream's re-open target fresh.
   // The connect effect deliberately does NOT depend on windowId (a same-session
@@ -849,7 +896,18 @@ export function TerminalClient({
   // which carries the current windowId at open time — so this call is redundant
   // (harmless) there and load-bearing only for the ride.
   useEffect(() => {
-    streamRef.current?.setWindowId(windowId);
+    const stream = streamRef.current;
+    if (!stream) return;
+    stream.setWindowId(windowId);
+    // Arm the deferred buffer clear for the ride — only while a stream is live
+    // AND the served session is resolved (an unresolved connection reconnects
+    // instead: the identity watcher's windowId-based rule bumps the epoch) AND
+    // the switch is UI-initiated (`clearOnRide`): a tmux-driven switch has
+    // already redrawn the new window before the URL followed, so a clear armed
+    // now would fire on the new window's NEXT chunk and wipe painted content.
+    if (connectedSessionRef.current && clearOnRideRef.current) {
+      pendingClearRef.current = true;
+    }
   }, [windowId]);
 
   // Connection identity — (server, owning session), NOT windowId.
@@ -1076,12 +1134,23 @@ export function TerminalClient({
       terminal.reset();
     }
 
+    /** Run the deferred same-session-ride buffer clear exactly once, at
+     *  first-write time — the `clear()` (not `reset()`) counterpart armed by
+     *  the windowId effect; see `pendingClearRef`. Mutually exclusive with a
+     *  pending reset: `onOpened` drops the clear when it arms the reset. */
+    function consumePendingClear() {
+      if (!pendingClearRef.current) return;
+      pendingClearRef.current = false;
+      terminal.clear();
+    }
+
     function flushToTerminal() {
       flushRafId = null;
       // An empty flush (e.g. a zero-message connection's close-time drain)
       // must not consume or execute the pending reset — see above.
       if (binaryBuffers.length === 0) return;
       consumePendingReset();
+      consumePendingClear();
       for (const buf of binaryBuffers) {
         terminal.write(buf);
       }
@@ -1153,11 +1222,14 @@ export function TerminalClient({
       // flush still paints these bytes at the first rendering opportunity. The
       // receipt source is now the stream's first DATA frame (seam 1 of the
       // TerminalClient port), replacing the socket's `onmessage`. No-op when no
-      // transition is armed.
-      notifyFirstWrite();
+      // transition is armed. Only the route's designated receipt source
+      // reports (`switchReceiptSource`) — another mounted terminal's bytes are
+      // not evidence that THIS route's incoming window has painted.
+      if (switchReceiptSourceRef.current) notifyFirstWrite();
 
       if (canWriteImmediately(chunk.length)) {
         consumePendingReset();
+        consumePendingClear();
         terminal.write(chunk);
         markImmediateWrite();
         return;
@@ -1191,6 +1263,10 @@ export function TerminalClient({
       stream.onOpened(() => {
         if (cancelled || streamRef.current !== stream) return;
         pendingReset = true;
+        // A stream (re)open supersedes a pending ride clear: the fresh
+        // connection's deferred reset owns the first chunk, and `reset()`
+        // already covers everything `clear()` would.
+        pendingClearRef.current = false;
         // Wipe adaptive-flush state carried over from the dead connection
         // (mirroring the effect-cleanup neutralization below). On a transparent
         // re-open, bytes buffered from the PREVIOUS connection may still be
@@ -1288,6 +1364,7 @@ export function TerminalClient({
       // buffers turns any orphaned drain into a no-op via the empty-flush guard
       // in flushToTerminal.
       pendingReset = false;
+      pendingClearRef.current = false;
       binaryBuffers = [];
       if (flushRafId) cancelAnimationFrame(flushRafId);
       if (frameResetRafId) cancelAnimationFrame(frameResetRafId);
