@@ -16,7 +16,7 @@ package, runs one rk command, and gets a seeded LXQt desktop that behaves
 under the relay like the IceWM one — solid ground, no locker, no compositor,
 no idle screen churn — with IceWM one command away again.
 
-**Status (2026-09-10)**: not started. Run order is § Execution order: L0 ∥ L1 first, then L2 ∥ L3 (L2 also gated on the L0 verdict). Cross-plan sequencing with the viewer-ergonomics plan under `merge-auto`: [`26-09-10-gui-combined-execution.md`](26-09-10-gui-combined-execution.md) (stages S0, S1, S3, S5).
+**Status (2026-09-10)**: L0 done — § L0 verdict confirms L-D4 and binds L1's teardown to the process group; L1–L3 not started. Run order is § Execution order: L0 ∥ L1 first, then L2 ∥ L3 (L2 also gated on the L0 verdict). Cross-plan sequencing with the viewer-ergonomics plan under `merge-auto`: [`26-09-10-gui-combined-execution.md`](26-09-10-gui-combined-execution.md) (stages S0, S1, S3, S5).
 
 ---
 
@@ -137,7 +137,7 @@ pays for it").
 
 | # | Slug (suggested) | Depends on | Size | Change folder | PR | Status |
 |---|------------------|-----------|------|---------------|----|--------|
-| L0 | *(spike — no fab change; § L0 verdict appended here)* | — | S | — | — | not started |
+| L0 | *(spike — no fab change; § L0 verdict appended here)* | — | S | — | — | Done — § L0 verdict (L-D4 confirmed) |
 | L1 | `gui-session-starters-and-wm-verb` | parent G3 merged (it is) | S | | | not started |
 | L2 | `gui-lxqt-seeded-defaults` | L0 verdict, L1 merged | M | | | not started |
 | L3 | `gui-desktop-picker` | L1 merged (∥ L2) | S | | | not started |
@@ -334,3 +334,258 @@ the LXQt row is absent and the footer shows the apt line. `just test` green.
 5. Start only the step § Execution order allows: check its *Waits for* and
    *Gate* columns first. L0's verdict is committed directly to `main`; the
    three fab changes go through PRs.
+
+---
+
+## L0 verdict
+
+> Appended 2026-09-10 by the L0 agent on this VM (Ubuntu 22.04, LXQt 0.17.1,
+> Xtigervnc 1.12, 16 vCPU, no GPU). Everything ran on throwaway displays
+> `:94 :96 :97 :98 :99` (short `-rfbunixpath` under `$XDG_RUNTIME_DIR`, the
+> production Xtigervnc argv) with throwaway `XDG_CONFIG_HOME` /
+> `XDG_DATA_HOME` / `XDG_CACHE_HOME`; the live `rk-gui` session on `:95` was
+> never touched and `~/.config/lxqt`, `~/Desktop` stayed absent afterwards.
+> Screenshots were viewed, not committed. Helper scripts (`rfbcount.py`
+> loopback RFB byte counter, display start/tree scripts) lived in the
+> session scratchpad and are not committed either.
+
+**Decision for L-D4: confirmed as written — LXQt 0.17 reads every seeded
+file from a directory prepended to `XDG_CONFIG_DIRS`; no fallback needed.**
+
+### 1. `XDG_CONFIG_DIRS` seeding (decides L-D4)
+
+- `startlxqt` (0.17) keeps a caller-supplied `XDG_CONFIG_DIRS` and only
+  *appends* `/etc`, `/etc/xdg`, `/usr/share` when missing, so a dir rk
+  prepends stays first. Ubuntu's own defaults (`/usr/share/lxqt/*.conf`,
+  `/usr/share/pcmanfm-qt/lxqt/settings.conf`) are reached the same way —
+  `/usr/share` in `XDG_CONFIG_DIRS` — which is why the mechanism is exactly
+  the distro's.
+- With an empty `XDG_CONFIG_HOME` (no `lxqt/` dir at all) and
+  `XDG_CONFIG_DIRS=<seed>/etc`, all four files were honored:
+  - `lxqt/session.conf` `[General] window_manager=openbox` → openbox
+    started, no "select your window manager" dialog (which is what an
+    unseeded first start shows).
+  - `lxqt/panel.conf` `[General] panels=panel1`, `[panel1]
+    plugins=mainmenu,quicklaunch,taskbar,tray,statusnotifier,worldclock`,
+    `position=Bottom`, `panelSize=32`, `iconSize=22`, `lineCount=1` and the
+    per-plugin sections (quicklaunch array, worldclock format) → one bottom
+    panel with exactly those plugins.
+  - `lxqt/lxqt.conf` `[General] icon_theme=breeze-dark` → the quick-launch
+    button shows its icon; with the file removed from the seed the same
+    button falls back to its text label, so the key is read from the seed
+    layer. `theme=` is read through the same QSettings path but the visual
+    check was inconclusive: `frost` paints the panel `palette(text)`
+    (black on this palette) and `dark` paints `rgba(0,0,0,50%)`, so both
+    look black on a screenshot.
+  - `pcmanfm-qt/lxqt/settings.conf` `[Desktop] WallpaperMode=none`,
+    `BgColor=#3b4252`, `HideItems=true`, `DesktopShortcuts=` → solid
+    `#3b4252` (centre pixel sampled `srgb(59,66,82)`), no icons.
+  - `autostart/<name>.desktop` with `Hidden=true` in the seed dir shadows
+    `/etc/xdg/autostart/<name>.desktop` (probe: `lxqt-runner.desktop`
+    hidden → no `lxqt-runner` process). This is how the seed keeps
+    `lxqt-xscreensaver-autostart.desktop` (shipped by `lxqt-session`, not a
+    module) from running `xscreensaver` if a user installs it.
+- What the session writes into the user's `XDG_CONFIG_HOME/lxqt/` on first
+  start: liblxqt writes a 28-byte `[General] __userfile__=true` stub for
+  every module it opens (`lxqt.conf`, `session.conf`, `panel.conf`,
+  `power.conf`, `notifications.conf` — a file-watcher hack), `lxqt-panel`
+  writes the full `[panel1]` geometry block plus `type=`/`alignment=` per
+  plugin, `lxqt-globalkeysd` writes `globalkeyshortcuts.conf`. QSettings
+  falls back per key, so `plugins=` and every plugin setting keep coming
+  from the seed; only keys the user file contains shadow it. Also:
+  `startlxqt` runs `mkdir -p "$XDG_DESKTOP_DIR"` (default `~/Desktop`) on
+  every start — document, do not fight.
+
+### 2. Idle RSS and idle relay traffic (60 s, no viewer input, loopback)
+
+Method: a noVNC-shaped RFB client on the display's unix socket (RFB 3.8,
+Tight with JPEG quality 6 / compression 2 — the fine-viewer defaults —
+CopyRect, Raw, LastRect, DesktopSize, ContinuousUpdates), parsing every
+FramebufferUpdate; bytes counted after a 5 s warm-up that drains the first
+full frame. The relay is a byte proxy of this stream, so bytes here are relay
+bytes for the same preset. The C5 Playwright spec was **not** used: it needs
+the e2e rig, which kills and respawns the host's live `rk-gui` session (C5
+verdict, incidental findings). Memory is the session process tree only;
+Xtigervnc itself sat at 74–86 MB RSS on every display.
+
+| Desktop (1280×800) | Tree RSS sum | Tree PSS sum | Updates / 60 s | Bytes / 60 s | Mbit/s |
+|---|---|---|---|---|---|
+| IceWM (`icewm-session --nobg --notray`, seeded profile) | 28 MB | 9.5 MB | 60 (its clock repaints every second) | 16.9 KB | 0.0023 |
+| LXQt, worldclock `HH:mm:ss` | 368 MB | 91–96 MB | 61 (1/s) | 18.5 KB | 0.0025 |
+| LXQt, worldclock `HH:mm` | 369–378 MB | 81–85 MB | **1** (the minute rollover) | 324 B | 0.00004 |
+
+Per process (RSS / PSS): `lxqt-panel` 93 / 24–28 MB, `pcmanfm-qt --desktop`
+91 / 22–25 MB, `lxqt-runner` 38 / 9 MB, `lxqt-session` 30 / 5 MB,
+`lxqt-globalkeysd`, `lxqt-notificationd`, `lxqt-policykit-agent` ~30 / 5 MB
+each, `openbox` 21 / 6 MB, `dbus-daemon` 12 / 2.5 MB. RSS double-counts the
+shared Qt libraries; PSS (~85 MB) is the honest cost, still ~9× IceWM.
+L2's acceptance line ("within 2× the IceWM idle figure") is met with a
+minutes-only clock by two orders of magnitude; a seconds clock is at parity
+with IceWM's own per-second clock, not worse — but L-D5's minutes-only rule
+stands, it turns idle into silence.
+
+### 3. First-start screenshots (1280×800, 536×799)
+
+- Fresh start at 1280×800 and fresh start at 536×799: one bottom panel the
+  full width of the screen (`1280×32+0+768` and `536×32+0+767`), main menu
+  at left, quick-launch next to it, clock at right; solid `#3b4252`
+  desktop, no icons, no first-run dialog of any kind.
+- Live resize 1280×800 → 536×799 via `xrandr` on a running session: the
+  panel reflowed to `536×32+0+767` and the pcmanfm-qt desktop window to
+  `536×799` within the 4 s before the screenshot. So the viewer's
+  SetDesktopSize path will reflow too.
+- pcmanfm-qt honored `WallpaperMode` + `BgColor` and `HideItems=true` /
+  empty `DesktopShortcuts` (no Home/Trash/Computer/Network icons).
+
+### 4. SIGTERM behaviour
+
+| Signal target | Result within 1 s |
+|---|---|
+| `dbus-run-session` (SIGTERM) | **only `dbus-run-session` exits.** `dbus-daemon`, `lxqt-session`, openbox and every `lxqt-*` module are reparented to PID 1 and keep running; the panel and desktop stay on screen |
+| `lxqt-session` (SIGTERM) | `lxqt-session` logs `aboutToQuit` / `Stopped`; openbox, `lxqt-panel`, `pcmanfm-qt`, `lxqt-globalkeysd`, `lxqt-notificationd`, `lxqt-policykit-agent`, `lxqt-runner` all exit; the orphaned `dbus-daemon` survives |
+| process group of `dbus-run-session` (`kill -TERM -- -<pgid>`) | everything exits, `dbus-daemon` included |
+
+The launched `qterminal` survived in every case — one started with only
+`DISPLAY` set (the rk launcher shape) and one started on the session bus —
+exactly the IceWM case. **Binding for L1**: today's `guiKillAndWait` sends
+`Process.Kill` (SIGKILL) to the direct child; under L-D2 that child is
+`dbus-run-session`, so the supervisor's teardown would orphan the whole
+desktop. L1's session-starter wrap must start the starter in its own
+process group (`Setpgid`) and signal the group — SIGTERM first so
+`lxqt-session` runs its module shutdown, SIGKILL after a bounded wait — or
+signal `lxqt-session` itself. The group is the simpler rule and also cleans
+up `dbus-daemon`.
+
+### 5. XFCE under `dbus-run-session` (documentation only)
+
+Installed `xfce4-session xfwm4 xfce4-panel xfce4-settings xfdesktop4`
+(`--no-install-recommends`, 30 packages) for one run, then purged again
+(L1's acceptance needs `rk gui wm xfce` to refuse on a host without XFCE).
+`dbus-run-session -- startxfce4` came up with the stock two-panel layout
+and wallpaper, desktop icons for Home and File System, and **no first-run
+panel wizard** on jammy's 4.16 (the default layout is applied from
+`/etc/xdg/xfce4/panel/default.xml`) — the plan's "shows a wizard" line
+should read "shows its stock layout". Idle tree: 257 MB RSS / 79 MB PSS
+(`xfce4-session`, `xfwm4`, `xfce4-panel` + two plugin wrappers,
+`xfdesktop`, `xfsettingsd`).
+
+- **Compositor is on by default**: xfconf channel `xfwm4`, property
+  `/general/use_compositing = true` (queried live with `xfconf-query -c
+  xfwm4 -p /general/use_compositing`).
+- **Where the toggle lives**: Settings → Window Manager Tweaks → Compositor
+  → "Enable display compositing", or `xfconf-query -c xfwm4 -p
+  /general/use_compositing -s false`; xfconf stores it in
+  `XDG_CONFIG_HOME/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml` and reads
+  system defaults from the same relative path under `XDG_CONFIG_DIRS`.
+  That is the one documentation line XFCE gets (L-D1).
+
+### Config keys that worked (for L2's `go:embed`, all verified on 0.17; drift checked against lxqt master)
+
+```ini
+# etc/lxqt/session.conf
+[General]
+window_manager=openbox
+leave_confirmation=false
+lock_screen_before_power_actions=false
+[Environment]
+GTK_CSD=0
+GTK_OVERLAY_SCROLLING=0
+
+# etc/lxqt/panel.conf
+[General]
+panels=panel1
+[panel1]
+plugins=mainmenu,quicklaunch,taskbar,tray,statusnotifier,worldclock
+position=Bottom
+desktop=0
+panelSize=32
+iconSize=22
+lineCount=1
+[mainmenu]
+type=mainmenu
+[quicklaunch]
+type=quicklaunch
+alignment=Left
+apps\size=1
+apps\1\desktop=/usr/share/applications/qterminal.desktop
+[taskbar]
+type=taskbar
+[tray]
+type=tray
+[statusnotifier]
+type=statusnotifier
+alignment=Right
+[worldclock]
+type=worldclock
+alignment=Right
+formatType=custom
+useAdvancedManualFormat=true
+customFormat=HH:mm
+showTooltip=false
+
+# etc/lxqt/lxqt.conf
+[General]
+theme=dark
+icon_theme=<an installed theme — probe; lxqt-core pulls none, breeze-dark was present here>
+[Qt]
+style=Fusion
+
+# etc/pcmanfm-qt/lxqt/settings.conf
+[Desktop]
+WallpaperMode=none
+BgColor=#3b4252
+FgColor=#ffffff
+HideItems=true
+DesktopShortcuts=
+ShowHidden=false
+
+# etc/autostart/lxqt-xscreensaver-autostart.desktop
+[Desktop Entry]
+Type=Application
+Name=XScreenSaver (disabled by rk)
+Exec=xscreensaver -no-splash
+Hidden=true
+OnlyShowIn=LXQt;
+```
+
+Amendments to L-D5 that fell out of the runs:
+
+- **Clock**: `formatType=short-timeonly` + `timeShowSeconds=false` still
+  shows seconds — the "short" format is the locale's short time format
+  (`HH:mm:ss` in the C locale) and `timeShowSeconds` only shapes the
+  manual/custom format. The minutes-only clock is `formatType=custom`,
+  `useAdvancedManualFormat=true`, `customFormat=HH:mm`. All three keys exist
+  unchanged in lxqt-panel master (2.x).
+- **Wallpaper mode**: `color` is not a value pcmanfm-qt knows (0.17 binary
+  and master accept `stretch fit center tile zoom none`); it "worked" only
+  by falling through to the default `none`, which is the solid-`BgColor`
+  mode. Seed `none`.
+- **Quick-launch**: seed launchers as `.desktop` paths
+  (`apps\N\desktop=`); an `exec=` entry whose binary was not on PATH
+  (`x-www-browser` here) rendered no button. The G1 launcher already
+  resolves terminal and browser to binaries, so L2 writes `.desktop` entries
+  only for ones that resolve (qterminal ships
+  `/usr/share/applications/qterminal.desktop`; for a browser, prefer its
+  own desktop file and fall back to `name=/exec=/icon=` with a resolved
+  binary). Master keeps the same `apps` array and `desktop/exec/name/icon`
+  keys.
+- **Autostart overrides**: `Hidden=true` in the seed's `autostart/` is the
+  mechanism for "no locker, no xscreensaver"; `lxqt-powermanagement` is not
+  in `lxqt-core` and needs no override unless installed (then
+  `lxqt-powermanagement.desktop` gets the same treatment).
+- **Icon theme**: `lxqt-core` installs no icon theme; without one the panel
+  falls back to text labels. L2 probes `/usr/share/icons` for a dark theme
+  (`breeze-dark`, then `Papirus-Dark`, then `Adwaita`) and writes the first
+  hit — or leaves the key out and lets the text fallback stand.
+- **Theme**: `dark` is the pick (`lxqt-themes` ships it); the visual check
+  could not tell it from `frost` on the panel alone (see § 1), so L2's
+  acceptance should look at the runner or a notification, not the panel.
+
+### Host side effects of the spike
+
+- `lxqt-core` stays installed (L2's acceptance needs it).
+- The one-shot XFCE install was purged with `--autoremove`; that also
+  removed ~50 already-orphaned `lib*-perl` packages nothing depended on.
+  `sudo apt-get install --no-install-recommends xfce4-session xfwm4
+  xfce4-panel xfce4-settings xfdesktop4` brings XFCE back if a later
+  spike needs it.
