@@ -33,7 +33,7 @@ hardcoded presets (fine 6/2, coarse 4/6) nobody can change, even though the
 C5 verdict says bytes per frame are what cap the frame rate on the user's
 Tailscale link.
 
-**Status (2026-09-10)**: plan written; V1 not started.
+**Status (2026-09-10)**: plan written; V1 not started. Execution order and operator handover: [`26-09-10-gui-combined-execution.md`](26-09-10-gui-combined-execution.md) (stages S2, S4, S6, S7).
 
 ---
 

@@ -16,7 +16,7 @@ package, runs one rk command, and gets a seeded LXQt desktop that behaves
 under the relay like the IceWM one — solid ground, no locker, no compositor,
 no idle screen churn — with IceWM one command away again.
 
-**Status (2026-09-10)**: not started. Run order is § Execution order: L0 ∥ L1 first, then L2 ∥ L3 (L2 also gated on the L0 verdict).
+**Status (2026-09-10)**: not started. Run order is § Execution order: L0 ∥ L1 first, then L2 ∥ L3 (L2 also gated on the L0 verdict). Cross-plan sequencing with the viewer-ergonomics plan under `merge-auto`: [`26-09-10-gui-combined-execution.md`](26-09-10-gui-combined-execution.md) (stages S0, S1, S3, S5).
 
 ---
 
