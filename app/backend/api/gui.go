@@ -2,8 +2,11 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"os"
 	"os/exec"
+	"runtime"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -19,10 +22,11 @@ import (
 const guiStatusBuildTimeout = 10 * time.Second
 
 // Server gui seams — the injectable layer behind GET /api/gui/{id},
-// POST /api/gui/{id}/restart, and the gui.enabled settings side effect
-// (mirroring the hub's guiSessionOptionsFn/guiProbeFn idiom). Nil falls back
-// to the production daemon/gui calls, so NewTestRouter handlers keep working;
-// tests that assert call counts inject counters directly.
+// POST /api/gui/{id}/restart, POST /api/gui/{id}/launch, and the gui.enabled
+// settings side effect (mirroring the hub's guiSessionOptionsFn/guiProbeFn
+// idiom). Nil falls back to the production daemon/gui calls, so NewTestRouter
+// handlers keep working; tests that assert call counts inject counters
+// directly.
 //
 // guiSessionExistsFn/guiSessionOptionsFn/guiSessionCreatedFn probe tmux, so
 // they are gated on guiDaemonUpFn — a tmux command on a dead rk-daemon socket
@@ -62,7 +66,7 @@ func (s *Server) guiSessionExists(ctx context.Context) bool {
 	return daemon.GUISessionExists(ctx)
 }
 
-func (s *Server) guiSessionOptions(ctx context.Context) (display, backend string, ok bool) {
+func (s *Server) guiSessionOptions(ctx context.Context) (display, backend, wm string, ok bool) {
 	if s.guiSessionOptionsFn != nil {
 		return s.guiSessionOptionsFn(ctx)
 	}
@@ -105,6 +109,23 @@ func (s *Server) guiLookPath(name string) (string, error) {
 		return s.guiLookPathFn(name)
 	}
 	return exec.LookPath(name)
+}
+
+// guiStat follows a launcher-resolved path (the dangling Debian-alternative
+// guard in gui.ResolveApp); guiLaunch starts the resolved argv detached. Both
+// are launcher seams behind POST /api/gui/{id}/launch.
+func (s *Server) guiStat(path string) (os.FileInfo, error) {
+	if s.guiStatFn != nil {
+		return s.guiStatFn(path)
+	}
+	return os.Stat(path)
+}
+
+func (s *Server) guiLaunch(argv, env []string) (int, error) {
+	if s.guiLaunchFn != nil {
+		return s.guiLaunchFn(argv, env)
+	}
+	return gui.StartDetached(argv, env)
 }
 
 // buildGuiStatus assembles the shared gui.Status document by wiring the
@@ -164,4 +185,72 @@ func (s *Server) handleGuiRestart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// guiLaunchRequest is the POST /api/gui/{id}/launch body: a role, never argv
+// (no arbitrary command over HTTP — the server resolves the argv from the
+// role's fixed ladder). Extra keys and a non-string app are rejected at
+// decode so nothing but the two roles ever reaches the launcher.
+type guiLaunchRequest struct {
+	App string `json:"app"`
+}
+
+// guiLaunchGOOS is the OS seam behind the launch handler's macOS refusal (the
+// CLI verb's guiDarwinRefusal twin): the darwin backend mirrors Screen Sharing
+// view-only, so there is no rk-managed display to launch onto. A package var
+// so tests drive the darwin branch without a darwin build.
+var guiLaunchGOOS = runtime.GOOS
+
+// guiLaunchDarwinError is the refusal text — byte-identical to the CLI's
+// guiDarwinRefusal("launch") so both doors say the same thing.
+const guiLaunchDarwinError = "gui launch is not supported on macOS in v1 — the GUI mirrors your live session view-only"
+
+// handleGuiLaunch serves POST /api/gui/{id}/launch — the HTTP twin of
+// 'rk gui launch', behind G2's palette rows. The ladder miss is a 200 with
+// ok:false on purpose: the palette toasts the hint through the normal success
+// path (the client throws on non-2xx).
+func (s *Server) handleGuiLaunch(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if msg := validate.ValidateGUIID(id); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
+	var body guiLaunchRequest
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "app must be terminal or browser")
+		return
+	}
+	role, err := gui.ParseAppRole(body.App)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if guiLaunchGOOS == "darwin" {
+		writeError(w, http.StatusConflict, guiLaunchDarwinError)
+		return
+	}
+	if !settings.Load().GUIEnabled {
+		writeError(w, http.StatusConflict, "gui disabled")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), guiStatusBuildTimeout)
+	defer cancel()
+	st := s.buildGuiStatus(ctx, id)
+	if !st.Reachable {
+		writeError(w, http.StatusConflict, "gui is on but not running — see 'rk gui status'")
+		return
+	}
+	name, path, ok := gui.ResolveApp(role, s.guiLookPath, s.guiStat)
+	if !ok {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "app": string(role), "hint": gui.LaunchHint(role, s.guiLookPath)})
+		return
+	}
+	pid, err := s.guiLaunch([]string{path}, gui.LaunchEnv(os.Environ(), st.Display, st.Socket))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, name+": "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "app": string(role), "argv0": name, "pid": pid})
 }
