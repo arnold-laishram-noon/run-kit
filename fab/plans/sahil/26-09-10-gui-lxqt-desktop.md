@@ -16,7 +16,7 @@ package, runs one rk command, and gets a seeded LXQt desktop that behaves
 under the relay like the IceWM one — solid ground, no locker, no compositor,
 no idle screen churn — with IceWM one command away again.
 
-**Status (2026-09-10)**: L0 done — § L0 verdict confirms L-D4 and binds L1's teardown to the process group; L1–L3 not started. Run order is § Execution order: L0 ∥ L1 first, then L2 ∥ L3 (L2 also gated on the L0 verdict). Cross-plan sequencing with the viewer-ergonomics plan under `merge-auto`: [`26-09-10-gui-combined-execution.md`](26-09-10-gui-combined-execution.md) (stages S0, S1, S3, S5).
+**Status (2026-09-11)**: L0 done — § L0 verdict confirms L-D4 and binds L1's teardown to the process group; L1 (PR #916), L2 (PR #932), and L3 (PR #929) merged — all stages this plan owns are done. Run order was § Execution order: L0 ∥ L1 first, then L2 ∥ L3 (L2 gated on the L0 verdict). Cross-plan sequencing with the viewer-ergonomics plan under `merge-auto`: [`26-09-10-gui-combined-execution.md`](26-09-10-gui-combined-execution.md) (stages S0, S1, S3, S5 — all merged). The resize-policy D7 pointer to the viewer-ergonomics plan lives on the grandparent plan's own D7 row ([`26-09-09-gui-surface.md`](26-09-09-gui-surface.md) § Decision log); this plan's decision log has no D7 of its own.
 
 ---
 
@@ -138,9 +138,9 @@ pays for it").
 | # | Slug (suggested) | Depends on | Size | Change folder | PR | Status |
 |---|------------------|-----------|------|---------------|----|--------|
 | L0 | *(spike — no fab change; § L0 verdict appended here)* | — | S | — | — | Done — § L0 verdict (L-D4 confirmed) |
-| L1 | `gui-session-starters-and-wm-verb` | parent G3 merged (it is) | S | | | not started |
-| L2 | `gui-lxqt-seeded-defaults` | L0 verdict, L1 merged | M | | | not started |
-| L3 | `gui-desktop-picker` | L1 merged (∥ L2) | S | | | not started |
+| L1 | `gui-session-starters-and-wm-verb` | parent G3 merged (it is) | S | 260910-zsui-gui-session-starters-and-wm-verb | #916 | Done |
+| L2 | `gui-lxqt-seeded-defaults` | L0 verdict, L1 merged | M | 260910-pfe4-gui-lxqt-seeded-defaults | #932 | Done |
+| L3 | `gui-desktop-picker` | L1 merged (∥ L2) | S | 260910-pp6o-gui-desktop-picker | #929 | Done |
 
 The four steps are **not** in numeric order of dependency; the table above
 lists them by what they are, the block below by when they run. Sizes are

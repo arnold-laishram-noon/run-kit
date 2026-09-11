@@ -69,13 +69,13 @@ The LXQt plan's own § Execution order (L0 ∥ L1 first, then L2 ∥ L3, L2 gate
 
 | # | Change ID | Folder | PR | Merged |
 |---|-----------|--------|----|--------|
-| S1 | | | | |
-| S2 | | 260910-zuci-gui-fixed-geometry-and-resize | | |
-| S3 | | | | |
-| S4 | | | | |
-| S5 | | | | |
-| S6 | | | | |
-| S7 | t2lv | 260910-t2lv-gui-toolbar-keybar-hidpi-sendkey | | |
+| S1 | zsui | 260910-zsui-gui-session-starters-and-wm-verb | #916 | ✓ |
+| S2 | zuci | 260910-zuci-gui-fixed-geometry-and-resize | #919 | ✓ |
+| S3 | pp6o | 260910-pp6o-gui-desktop-picker | #929 | ✓ |
+| S4 | 0aur | 260910-0aur-gui-zoom-and-touch-pointer | #931 | ✓ |
+| S5 | pfe4 | 260910-pfe4-gui-lxqt-seeded-defaults | #932 | ✓ |
+| S6 | 5psw | 260910-5psw-gui-quality-presets-and-stats | #933 | ✓ |
+| S7 | t2lv | 260910-t2lv-gui-toolbar-keybar-hidpi-sendkey | #934 | ✓ |
 
 ---
 
