@@ -38,9 +38,10 @@ key bar, stats, exit-fullscreen), and a laptop user watching the tile has no
 toolbar at all — resolution, fullscreen, and the launchers are palette-only.
 
 **Status (2026-09-11)**: R1 **Done** — `91px`, PR #946 merged 2026-09-11. T1
-implemented as change `abna` (PR #948, pending review; the once-only
-live-desktop resize acceptance is deferred to post-merge because the host gui
-was off during the pipeline). Operator handover: § Operator protocol below.
+**Done** — `abna`, PR #948 merged 2026-09-11; the once-only live-desktop
+resize acceptance is deferred to post-merge because the host gui was off
+during the pipeline. Both changes queued done. Operator handover: § Operator
+protocol below.
 
 ---
 
@@ -150,7 +151,7 @@ Two fab changes, disjoint in code, sharing only `docs/specs/gui.md` (different s
 | Stage | Change | Lane | Depends on | Change ID | PR | Status |
 |---|---|---|---|---|---|---|
 | R1 | Desktop reference: table + hints, `wm_candidates` missing rows, picker rows, `rk gui wm --list` + help, site guide + README + install line, skill gotcha | full | — | `91px` | #946 | **Done** — merged 2026-09-11 |
-| T1 | Toolbar: mount-for-all + hover reveal, resolution menu chip, fullscreen toggle, launch/input/health chips, `⋯` overflow by width | full | — | `abna` | #948 | shipped 2026-09-11 (PR pending review; live-desktop acceptance post-merge) |
+| T1 | Toolbar: mount-for-all + hover reveal, resolution menu chip, fullscreen toggle, launch/input/health chips, `⋯` overflow by width | full | — | `abna` | #948 | **Done** — merged 2026-09-11 (live-desktop resize acceptance still pending, host gui was off during the pipeline) |
 
 ### R1 — Desktop reference
 
