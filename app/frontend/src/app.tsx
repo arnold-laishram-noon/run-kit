@@ -168,6 +168,7 @@ import { HeadsetIcon } from "@/components/sidebar/icons";
 import { canRequestWindowOperatorAction } from "@/components/sidebar/row-flyout-card";
 import { SurfaceLayout } from "@/components/surface-layout";
 import { CronActivityFeed } from "@/components/cron-activity-feed";
+import { WatchedTasks } from "@/components/watched-tasks";
 import { TerminalActivityTabs } from "@/components/terminal-activity-tabs";
 import { BottomBar } from "@/components/bottom-bar";
 import { StatusBar } from "@/components/status-bar";
@@ -934,24 +935,31 @@ function AppShell() {
   // lib/router-url.ts) types `.view`/`.panel`/`.layout`, so no casts are
   // needed.
   const search = useSearch({ strict: false });
-  // The mobile operator route's Terminal|Activity segment gate: the header
-  // and the content swap mount ONLY on a mobile viewport on the operator
+  // The mobile operator route's segment gate: the segmented
+  // header and the content swap mount ONLY on a mobile viewport on the operator
   // window's own terminal route. `tab` absent/"terminal" (or the gate false)
   // renders the pre-existing tree byte-identically; the role is known only
-  // once the sessions payload resolves the window, so a cold `?tab=activity`
-  // deep link swaps in a beat after mount.
+  // once the sessions payload resolves the window, so a cold `?tab=` deep link
+  // swaps in a beat after mount.
   const operatorConsoleTabs = isMobile && windowParam != null && currentWindow?.role === "operator";
-  const activityTabActive = operatorConsoleTabs && search.tab === "activity";
-  // Desktop `?tab=activity` handoff (the notify deep-link): the segment param
+  const consoleTab = operatorConsoleTabs ? (search.tab ?? "terminal") : "terminal";
+  const activityTabActive = consoleTab === "activity";
+  const tasksTabActive = consoleTab === "tasks";
+  // Either non-terminal tab hides (never unmounts) the terminal column.
+  const terminalHidden = activityTabActive || tasksTabActive;
+  // Desktop `?tab=` handoff (the notify deep-link): the segment param
   // is inert on desktop — the tabs above are mobile-only and the route itself
-  // has no Activity view — so on the operator window's terminal route the
-  // console drawer opens on its Activity segment instead. Fires once per
+  // has no non-terminal view — so on the operator window's terminal route the
+  // console drawer opens on that segment instead. Fires once per
   // arrival: the param is stripped immediately so a reload does not re-open.
   useEffect(() => {
-    if (isMobile || !windowParam || currentWindow?.role !== "operator" || search.tab !== "activity") {
+    if (isMobile || !windowParam || currentWindow?.role !== "operator") {
       return;
     }
-    requestOperatorConsole({ action: "open", segment: "activity" });
+    if (search.tab !== "activity" && search.tab !== "tasks") {
+      return;
+    }
+    requestOperatorConsole({ action: "open", segment: search.tab });
     void navigate({
       to: ".",
       search: (prev) => ({ ...prev, tab: undefined }),
@@ -2076,6 +2084,11 @@ function AppShell() {
   activeWindowRef.current = activeWindow;
   const windowParamRef = useRef(windowParam);
   windowParamRef.current = windowParam;
+  // The console `?tab=` param, read on click by `navigateToWindow`'s
+  // same-window early return without a stale closure (that path decides
+  // whether the no-op tmux switch must still navigate back to the terminal).
+  const searchTabRef = useRef(search.tab);
+  searchTabRef.current = search.tab;
   const serverRef = useRef(server);
   serverRef.current = server;
   // Live isConnected + receipt-tick reads for the freshness-gated bounce
@@ -2500,10 +2513,25 @@ function AppShell() {
       // pending-switch machinery would guarantee a spurious spinner mask at
       // 300ms over the very terminal the user is on, plus a false failure
       // toast at the confirmation window. Keep the ergonomic drawer close;
-      // arm nothing (pre-change behavior: inert).
+      // arm nothing tmux-side. The one navigation the no-op still owes is
+      // leaving a mobile console tab (below).
       if (
         isRedundantSwitch(windowId, windowParamRef.current, activeWindowRef.current?.windowId)
       ) {
+        // Same-window tap from a mobile console tab (R3): a watched row can BE
+        // the active window (the backend joins `monitored` onto all windows),
+        // so the no-op tmux switch above must still leave the tab content slot
+        // — replace the route with a cleared search (dropping `?tab=`) while
+        // arming nothing tmux-side. Mobile-only gate: on desktop the `?tab=`
+        // handoff effect owns the param and strips it itself.
+        if (isMobile && searchTabRef.current) {
+          navigate({
+            to: "/$server/$window",
+            params: { server, window: windowId },
+            search: {},
+            replace: true,
+          });
+        }
         if (isMobile) setSidebarOpen(false);
         return;
       }
@@ -5302,7 +5330,7 @@ function AppShell() {
               <LogoSpinner size={48} />
             </div>
           )}
-          {/* The mobile operator route's Terminal|Activity segmented header —
+          {/* The mobile operator route's segmented header —
               mounts only under the `operatorConsoleTabs` gate, so every other
               route/form factor renders nothing here. */}
           {operatorConsoleTabs && <TerminalActivityTabs />}
@@ -5314,12 +5342,13 @@ function AppShell() {
               applyLayout — R12) and the right-panel surface mount (the panel
               slot is a
               tile now — R6). Open-tile toggles (R10) live in the top bar's
-              surface-toggle group. On the Activity tab this column stays
+              surface-toggle group. On a non-terminal tab (Activity, Operator
+              Tasks) this column stays
               MOUNTED-but-hidden (the `hidden` class — the same
               hide-never-unmount posture SurfaceLayout applies to its own
               hidden tiles), so the terminal stream survives the tab swap and
               switching back needs no reconnect. */}
-          <div className={activityTabActive ? "flex-1 min-w-0 min-h-0 flex-col hidden" : "flex-1 min-w-0 min-h-0 flex flex-col"}>
+          <div className={terminalHidden ? "flex-1 min-w-0 min-h-0 flex-col hidden" : "flex-1 min-w-0 min-h-0 flex flex-col"}>
           {/* Render gate keys on `windowParam` (the URL's @N) ALONE, not the
               SSE-derived `sessionName`. The session name is only needed for the
               breadcrumb/title and resolves a beat after the first snapshot; the
@@ -5456,9 +5485,13 @@ function AppShell() {
             />
           )}
           </div>
-          {/* The Activity tab's content swap: the feed takes the slot the
-              SurfaceLayout column vacates (hidden, not unmounted, above). */}
+          {/* The non-terminal tabs' content swap: the feed/watchlist takes the
+              slot the SurfaceLayout column vacates (hidden, not unmounted,
+              above). */}
           {activityTabActive && <CronActivityFeed server={server} />}
+          {tasksTabActive && (
+            <WatchedTasks server={server} sessions={sessions} onNavigate={navigateToWindow} />
+          )}
         </div>
       </main>
 
