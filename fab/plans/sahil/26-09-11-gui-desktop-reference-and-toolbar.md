@@ -37,8 +37,8 @@ in fullscreen, carries viewer posture only (zoom, pointer mode, quality,
 key bar, stats, exit-fullscreen), and a laptop user watching the tile has no
 toolbar at all — resolution, fullscreen, and the launchers are palette-only.
 
-**Status (2026-09-11)**: planned; R1 and T1 not yet created. Operator
-handover: § Operator protocol below.
+**Status (2026-09-11)**: R1 **Done** — `91px`, PR #946 merged 2026-09-11. T1
+(`abna`) in progress. Operator handover: § Operator protocol below.
 
 ---
 
@@ -147,7 +147,7 @@ Two fab changes, disjoint in code, sharing only `docs/specs/gui.md` (different s
 
 | Stage | Change | Lane | Depends on | Change ID | PR | Status |
 |---|---|---|---|---|---|---|
-| R1 | Desktop reference: table + hints, `wm_candidates` missing rows, picker rows, `rk gui wm --list` + help, site guide + README + install line, skill gotcha | full | — | `91px` | | intake drafted 2026-09-11 (inactive) |
+| R1 | Desktop reference: table + hints, `wm_candidates` missing rows, picker rows, `rk gui wm --list` + help, site guide + README + install line, skill gotcha | full | — | `91px` | #946 | **Done** — merged 2026-09-11 |
 | T1 | Toolbar: mount-for-all + hover reveal, resolution menu chip, fullscreen toggle, launch/input/health chips, `⋯` overflow by width | full | — | | | |
 
 ### R1 — Desktop reference
