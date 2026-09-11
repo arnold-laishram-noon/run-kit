@@ -1,5 +1,12 @@
 # Archived Changes
 
+- **260910-t2lv-gui-toolbar-keybar-hidpi-sendkey** — Session toolbar, HiDPI, and Send key (S7 / V4)
+- **260910-5psw-gui-quality-presets-and-stats** — Quality presets and the stats overlay (S6 / V3)
+- **260910-pfe4-gui-lxqt-seeded-defaults** — LXQt seeded defaults (S5 / L2)
+- **260910-0aur-gui-zoom-and-touch-pointer** — Zoom and touch pointer modes (S4 / V2)
+- **260910-pp6o-gui-desktop-picker** — The desktop picker — Settings row + `GUI: Desktop…` (S3 / L3)
+- **260910-zuci-gui-fixed-geometry-and-resize** — Fixed geometry — `gui.geometry`, `rk gui resize`, the resize endpoint, the palette rows (S2 / V1)
+- **260910-zsui-gui-session-starters-and-wm-verb** — GUI session starters and the `rk gui wm` verb (S1 / L1)
 - **260905-csk9-mux-sessions-role-query** — Mux Sessions Role Query
 - **260909-kji8-tab-keyed-code-workspace-actions** — Tab-keyed code-server workspaces + run-kit context-menu actions in the code bridge extension
 - **260909-fkh1-gui-backend-switch-and-relay** — GUI Backend — the Switch, the Supervisor, the Relay (plan C2)
