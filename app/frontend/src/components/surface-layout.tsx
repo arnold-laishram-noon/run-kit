@@ -229,9 +229,19 @@ interface SurfaceLayoutProps {
   guiZoom?: GuiZoom;
   guiPointerMode?: GuiPointerMode;
   onGuiZoomChange?: (z: GuiZoom) => void;
+  onGuiPointerModeChange?: (m: GuiPointerMode) => void;
+  /** HiDPI (`rk-gui-hidpi`) and key-bar visibility (`rk-gui-keybar`) postures
+   *  — both default to today's behavior (off / shown). */
+  guiHidpi?: boolean;
+  guiKeyBarVisible?: boolean;
+  onGuiKeyBarVisibleChange?: (visible: boolean) => void;
+  /** The fullscreen toggle verb (app.tsx's guiFullscreen) for the toolbar pill's ⤢. */
+  onGuiFullscreen?: () => void;
   guiResizeLocked?: boolean;
   guiQuality?: GuiQuality;
   guiStatsVisible?: boolean;
+  onGuiQualityChange?: (q: GuiQuality) => void;
+  onGuiStatsVisibleChange?: (visible: boolean) => void;
   /** RFB connection report — app.tsx folds it into the toggle dot. */
   onGuiConnection?: (connected: boolean) => void;
   /** Restart supervisor verb for the gui empty state (POSTs the restart
@@ -587,9 +597,16 @@ export function SurfaceLayout({
   guiZoom = "fit",
   guiPointerMode,
   onGuiZoomChange,
+  onGuiPointerModeChange,
+  guiHidpi = false,
+  guiKeyBarVisible = true,
+  onGuiKeyBarVisibleChange,
+  onGuiFullscreen,
   guiResizeLocked = false,
   guiQuality = "balanced",
   guiStatsVisible = false,
+  onGuiQualityChange,
+  onGuiStatsVisibleChange,
   onGuiConnection,
   onGuiRestart,
   onGuiOpenLogs,
@@ -1633,9 +1650,16 @@ export function SurfaceLayout({
               zoom={guiZoom}
               pointerMode={guiPointerMode ?? (coarsePointer ? "trackpad" : "touch")}
               onZoomChange={onGuiZoomChange ?? (() => {})}
+              onPointerModeChange={onGuiPointerModeChange ?? (() => {})}
+              hidpi={guiHidpi}
+              keyBarVisible={guiKeyBarVisible}
+              onKeyBarVisibleChange={onGuiKeyBarVisibleChange ?? (() => {})}
+              onFullscreen={onGuiFullscreen ?? (() => {})}
               resizeLocked={guiResizeLocked}
               quality={guiQuality}
               statsVisible={guiStatsVisible}
+              onQualityChange={onGuiQualityChange ?? (() => {})}
+              onStatsVisibleChange={onGuiStatsVisibleChange ?? (() => {})}
               onConnectionChange={onGuiConnection}
               onRestart={onGuiRestart}
               onOpenLogs={onGuiOpenLogs}
