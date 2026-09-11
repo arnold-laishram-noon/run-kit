@@ -26,7 +26,9 @@ S3 merged 2026-09-10 (PR [hexokit-site#3](https://github.com/sahil87/hexokit-sit
 S4 merged 2026-09-10 (PR [hexokit-site#4](https://github.com/sahil87/hexokit-site/pull/4),
 fab change `lvnp`) after Sahil's design review; the earlier attempt
 ([hexokit-site#2](https://github.com/sahil87/hexokit-site/pull/2), fab change `jwhx`) is closed.
-The Phase 1 gate is open. Next pickup is S5.
+The Phase 1 gate is open. Next pickup is S5. **2026-09-11: the formula
+rename and the GitHub repo rename moved to a final Phase 3 (R1, R2) at
+Sahil's request; roster fields move with them.**
 
 ---
 
@@ -169,28 +171,46 @@ block can run in parallel. Agents: fill folder/PR when you create the change.
 | S4 | hexokit-site | `hexokit-landing` | S2 | L | D6 landing page + design iteration (§ Site shape). Hand-written, so it is on-brand from day one even while `/docs/` still reads "run-kit" | [hexokit-site#4](https://github.com/sahil87/hexokit-site/pull/4) | **merged** 2026-09-10 (fab change `lvnp`) — `/` on a StarlightPage splash wrapper; hero → install → seven feature cards (incl. a full-width operator-console card) → "Use any agent, untouched" → toolkit hexagon → desktop card → footer; assets OCR-triaged from Sahil's Desktop pool, tight card crops; copy per hexokit-site `docs/findings/landing-copy-study.md`; terminal island retained unmounted. Design accepted; #2 (`jwhx`) closed |
 | S5 | hexokit-site | `hexokit-install-script` | S3 | S | D10: `/install` served from the same script with the product-first default; the `install-composition` Policy B text prepared for C1 | | not started |
 
-### Phase 1 — renames (standards first; shll.ai still live and unchanged)
+### Phase 1 — brand surfaces, no renames (shll.ai live; repo, formula, roster untouched)
 
 | # | Repo | Slug (suggested) | Depends on | Size | Scope | PR | Status |
 |---|------|------------------|-----------|------|-------|----|--------|
-| C1 | shll | `hexokit-banner-and-roster` | S4 accepted | S | **No rename of the standards (D14).** Content only: `readme-extraction` §2 blockquote → "Part of [HexoKit](https://hexokit.com) — see all projects there"; `install-composition` Policy B install-docs location → hexokit.com; `config-home` example → `hexokit`. Roster: `run-kit` → `hexokit` (`Formula`, `Repo`, `Name`), `LegacyName` gains `run-kit` beside `rk`; `versions.json` URL constant → hexokit.com (shll.ai kept as fallback); `shll skill` bundle text. Leave every other `shll.ai` / "shll toolkit" mention for X4 | | not started |
-| C2 | homebrew-tap | `hexokit-formula` | C1 | S | `Formula/hexokit.rb` installs `hexokit` + `rk` symlink; `formula_renames.json` adds `run-kit → hexokit` (precedent: `rk → run-kit`); README banner + drop stale `ai.shll.in` | | not started |
-| C3 | run-kit | `hexokit-repo-rename` | C1 | L | README H1/tagline/badges; `docs/site/*` identity lines; `.github/formula-template.rb`, `scripts/release.sh` asset/formula names; Electron `productName`/`artifactName` (D8, appId kept); `run-kit` cobra alias verb → `hexokit` (keep `run-kit` hidden alias one release); specs' present-tense identity lines; `fab/project/config.yaml` name; `docs/site/skill.md` H1. **Last step: GitHub rename `run-kit` → `hexokit`** (old URL redirects; needs `gh auth switch --user sahil87`) | | not started |
-| C4 | run-kit | `hexokit-home-migration` | C3 | M | D9: `~/.config/run-kit` → `~/.config/hexokit` (one-time move, dual-read one release); `$XDG_STATE_HOME/run-kit` → `hexokit` (cron entries + snapshots must move; droppable caches may cold-start); `runkit-*` localStorage → `hexokit-*` read-old/write-new | | not started |
-| C7 | fab-kit + wt, idea, tu, hop, sahil87 | `hexokit-banner-sweep` | C1 | S each | README banner via the standard; present-tense "run-kit" product mentions → HexoKit (`rk` verbs untouched); sahil87 profile table row + fix `brew install sahil87/tap/all` (no such formula) | | not started |
+| C1 | shll | `hexokit-banner-and-policy` | S4 accepted | S | **No rename of the standards (D14). Roster untouched (→ R1/R2).** Content only: `readme-extraction` §2 blockquote → "Part of [HexoKit](https://hexokit.com) — see all projects there"; `install-composition` Policy B install-docs location → hexokit.com; `config-home` example → `hexokit`; `versions.json` URL constant → hexokit.com (shll.ai kept as fallback); `shll skill` bundle prose. Leave every other `shll.ai` / "shll toolkit" mention for X4 | | not started |
+| C3 | run-kit | `hexokit-brand-surfaces` | C1 | M | README H1/tagline (badge URLs stay `sahil87/run-kit` until R2); `docs/site/*` identity lines + `skill.md` H1; Electron `productName`/`artifactName` (D8, appId kept); `run-kit` cobra alias verb → `hexokit` (keep `run-kit` hidden alias one release); specs' present-tense identity lines; `fab/project/config.yaml` name. **No GitHub rename, no release-tooling change** (both → R1/R2) | | not started |
+| C4 | run-kit | `hexokit-home-migration` | C3 | M | D9: `~/.config/run-kit` → `~/.config/hexokit` (one-time move, dual-read one release); `$XDG_STATE_HOME/run-kit` → `hexokit` (cron entries + snapshots must move; droppable caches may cold-start); `runkit-*` localStorage → `hexokit-*` read-old/write-new. Independent of the formula/repo names | | not started |
+| C7 | fab-kit + wt, idea, tu, hop, sahil87 | `hexokit-banner-sweep` | C1 | S each | README banner via the standard; present-tense "run-kit" product mentions → HexoKit (`rk` verbs untouched); sahil87 profile table row + fix `brew install sahil87/tap/all` (no such formula). Repo links stay `sahil87/run-kit` until R2 | | not started |
 
-### Phase 2 — cutover (the only irreversible steps; do in one sitting)
+S5 (Phase 0) is unaffected but its default must be `shll install run-kit`
+(roster name) until R1 flips the roster; the script's *prose* says HexoKit.
+
+### Phase 2 — site cutover (irreversible for shll.ai only; announce after)
 
 | # | Repo | Slug (suggested) | Depends on | Size | Scope | PR | Status |
 |---|------|------------------|-----------|------|-------|----|--------|
-| X1 | hexokit-site | `hexokit-site-source-flip` | C3 merged | S | Slug table source `sahil87/run-kit` → `sahil87/hexokit`; refresh crons run once; redirect map for the old shll.ai paths ready (D7) — also `shll.ai/workflows/* → hexokit.com/toolkit/*` and `shll.ai/tools/* → hexokit.com/tools/*` (both hop once more in-site; S3 left static redirects for every old path) | | not started |
+| X1 | hexokit-site | `hexokit-site-cutover-prep` | C3, C7 merged | S | Redirect map for the old shll.ai paths ready (D7) — also `shll.ai/workflows/* → hexokit.com/toolkit/*` and `shll.ai/tools/* → hexokit.com/tools/*` (both hop once more in-site; S3 left static redirects for every old path). **Slug-table source stays `sahil87/run-kit`** (flip → R2); refresh crons run once so `/docs/` carries the C3 README | | not started |
 | X2 | shll.ai | `shll-ai-redirect-stub` | X1 live | S | Replace the repo's contents in place (D13): CNAME `shll.ai`, redirect pages → hexokit.com, **byte copies** of `/install` and `/versions.json`. They MUST be real files, not redirects: GitHub Pages redirects are meta-refresh HTML, and `curl -fsSL … \| sh` would feed that HTML to `sh` (curl's `-L` only helps against real 301s, which Pages cannot emit). Refreshed by the same CI copy step. Remove the cron workflows. Never lapses (D4) | | not started |
-| X3 | run-kit | `hexokit-memory-hydrate` | X2 | S | Memory + specs identity sweep for present-truth lines only (D11); competitive-landscape one-liner; `context.md`; this plan's Status → Done | | not started |
 | X4 | shll | `standards-consumer-site-sweep` | X2 live | S | D14 second pass: in `docs/site/standards/*.md` (and the embedded copies, drift-guarded) flip `shll.ai` → `hexokit.com` where it names the consuming site (32 mentions) and the nine "[shll toolkit](https://shll.ai)" intros → "[HexoKit toolkit](https://hexokit.com/toolkit/)". `shll standards` command, file names, and the standards' own names are untouched | | not started |
 
-Order: S1 → S2 → (S3 ∥ S4) → S5 → *[design accepted]* → C1 → (C2 ∥ C3 ∥ C7)
-→ C4 → X1 → X2 → (X3 ∥ X4). Users on the old formula get brew's rename handling
-from C2; users on old `shll` binaries keep working via X2's endpoints.
+### Phase 3 — the two renames, as late as wanted (each a one-sitting bundle)
+
+Deferred at Sahil's request (2026-09-11). Nothing in Phases 1–2 depends on
+them: the roster's `Name`/`Formula`/`Repo` are runtime-coupled to the tap
+formula and the GitHub repo (`shll install`, `doctor`, `check-updates`), so
+each roster field moves *with* its rename, never ahead of it. GitHub redirects
+old repo URLs (web, clone, releases, raw) and brew's `formula_renames.json`
+handles the tap, so stragglers are covered either way. R1 and R2 are
+independent of each other and can be weeks apart.
+
+| # | Repo(s) | Slug (suggested) | Depends on | Size | Scope | PR | Status |
+|---|---------|------------------|-----------|------|-------|----|--------|
+| R1 | homebrew-tap → run-kit → shll → hexokit-site | `hexokit-formula-bundle` | X2 live (may be much later) | M | In order, one sitting: **(a)** tap: `Formula/hexokit.rb` (installs `hexokit` + `rk` symlink), `formula_renames.json` adds `run-kit → hexokit` (precedent `rk → run-kit`), README banner + drop stale `ai.shll.in`; **(b)** run-kit: `.github/workflows/release.yml` writes `Formula/hexokit.rb`, `.github/formula-template.rb` name; cut a release; **(c)** shll: roster `Name`+`Formula` → `hexokit`, `LegacyName` gains `run-kit`, `versions.json` row → `hexokit` (retire S3's `envelope` carry-over), release shll; **(d)** hexokit-site: landing shows `brew install sahil87/tap/hexokit`, S5 script default → `hexokit`. Verify `brew upgrade` on a box with the old formula before (c) | | not started |
+| R2 | run-kit → shll → hexokit-site → satellites | `hexokit-repo-bundle` | X2 live (may be much later) | S | One sitting: **(a)** GitHub rename `sahil87/run-kit` → `sahil87/hexokit` (`gh auth switch --user sahil87`; never recreate `run-kit`); **(b)** shll roster `Repo` → `hexokit`, release; **(c)** hexokit-site slug-table source → `sahil87/hexokit`, crons run once; **(d)** run-kit badges/`homepage` fields/formula-template URLs, sahil87 profile + C7 repo links. Redirects cover everything between (a) and (d) | | not started |
+| X3 | run-kit | `hexokit-memory-hydrate` | R1, R2 | S | Memory + specs identity sweep for present-truth lines only (D11); competitive-landscape one-liner; `context.md`; this plan's Status → Done | | not started |
+
+Order: S1 → S2 → (S3 ∥ S4) → S5 → *[design accepted]* → C1 → (C3 ∥ C7)
+→ C4 → X1 → X2 → X4 → *[announce]* → … → R1, R2 (any order, any gap) → X3.
+Users on old `shll` binaries keep working via X2's endpoints throughout;
+users on the old formula get brew's rename handling at R1.
 
 ## Constitution mapping (run-kit)
 
@@ -226,6 +246,11 @@ from C2; users on old `shll` binaries keep working via X2's endpoints.
 - **Two-site window.** During Phase 0/1 both sites are live: shll.ai
   unchanged, hexokit.com unannounced. Nobody is pointed at hexokit.com until
   X1, so the window is safe; its docs layer reads "run-kit" until then.
+- **Two names on one machine (Phase 3 deferral).** Between the announce
+  and R1, `brew list` says `run-kit` while the product says HexoKit, and the
+  landing page cannot show a `brew install … hexokit` line; between announce
+  and R2, README badges and repo links point at `sahil87/run-kit`. Accepted
+  by Sahil — the redirect and rename machinery makes both gaps cosmetic.
 - **Cron double-scaffold.** hexokit-site's copied cron workflows must stay
   disabled until S3's slug map lands, or they commit a second `run-kit` tree.
 
