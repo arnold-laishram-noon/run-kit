@@ -170,7 +170,7 @@ would contradict the code).
 ### Functional Completeness
 
 - [x] A-001 R1: `configs/tmux/default.conf`, `poweruser.conf`, and `byobu.conf` each carry `set -as terminal-features ',xterm-256color:hyperlinks'` beside their existing `sync` entry; `simple.conf` is unmodified.
-- [x] A-002 **DEFERRED to CI** R2: A Go test in `app/backend/internal/tmux/tmux_test.go` fails if the embedded default conf loses the `hyperlinks` feature. *(Not verified: no Go toolchain on this host, so `TestDefaultConfigAdvertisesHyperlinksFeature` has never been compiled or run. Verified statically instead — `strings` is already imported, `DefaultConfigBytes()` is in-package and returns `[]byte`, the test name is unique, and both asserted literals match the staged embed byte-for-byte. CI runs `just test-backend`, which stages the conf via `_ensure-tmux-conf` first.)*
+- [x] A-002 R2: A Go test in `app/backend/internal/tmux/tmux_test.go` fails if the embedded default conf loses the `hyperlinks` feature. *(Verified: Go 1.27.1 installed after the fact; `TestDefaultConfigAdvertisesHyperlinksFeature` PASS, full `just test-backend` green, `just build` green.)* *(Not verified: no Go toolchain on this host, so `TestDefaultConfigAdvertisesHyperlinksFeature` has never been compiled or run. Verified statically instead — `strings` is already imported, `DefaultConfigBytes()` is in-package and returns `[]byte`, the test name is unique, and both asserted literals match the staged embed byte-for-byte. CI runs `just test-backend`, which stages the conf via `_ensure-tmux-conf` first.)*
 - [x] A-003 R3: `terminal-client.tsx`'s `new Terminal({…})` options object contains a `linkHandler` with an `activate` member, and no `allowNonHttpProtocols` key.
 - [x] A-004 R4: `window.open(` appears exactly once in `terminal-client.tsx`, inside the shared opener local, and both the `linkHandler` and the `WebLinksAddon` handler reference that local.
 - [x] A-005 R5: A unit test asserts the `linkHandler.activate` → `window.open(uri, "_blank", "noopener,noreferrer")` path.
@@ -183,7 +183,7 @@ would contradict the code).
 ### Scenario Coverage
 
 - [x] A-008 **DEFERRED to post-merge live check** R1 R3: Manual smoke check recorded — a live pane's OSC 8 hyperlink is clickable and opens in a new tab, and a bare URL shows no duplicate underline/hover artifact from the two providers overlapping. *(Not verified: needs a running dashboard, which needs the Go backend.)*
-- [x] A-009 **DEFERRED to post-merge live check** R3: Manual smoke check recorded — the tty export snapshot row round-trips a buffer containing an OSC 8 hyperlink without error. *(Not verified: needs a running dashboard, which needs the Go backend.)*
+- [x] A-009 R3: The tty export snapshot path round-trips a buffer containing an OSC 8 hyperlink **without error**. *(Verified against the real `@xterm/addon-serialize`: no throw; the restored line reads `See Example Site done.` FINDING — the hyperlink ATTRIBUTE is not preserved: `serialize()` emits no OSC 8, and `serializeAsHTML()` emits a plain `<span>`, no `<a>`, no URI. Exports degrade to plain text. Not a regression — before this change no OSC 8 reached xterm at all — but it does contradict the investigation's "well-supported in xterm 6" assumption, corrected below.)*
 
 ### Edge Cases & Error Handling
 
@@ -212,44 +212,50 @@ Run in this worktree, in `code-quality.md` § Verification order:
 |------|--------|
 | `cd app/frontend && npx tsc --noEmit` | **pass** (exit 0) |
 | `just test-frontend` (Vitest) | **pass** — 222 files, 4609 tests; the two new OSC 8 cases green |
-| `just test-backend` (`go test ./...`) | **BLOCKED** — no Go toolchain on this host (`sh: 1: go: not found`); no `mise`/`asdf`/`nix` provides one |
-| `just test` (adds e2e) | **BLOCKED** — the e2e rig starts the Go backend |
-| `just build` | **BLOCKED** — same reason |
+| `just test-backend` (`go test ./...`) | **pass** — every package; `TestDefaultConfigAdvertisesHyperlinksFeature` PASS |
+| `just build` | **pass** — `dist/rk` built, `rk --version` → v3.19.50 |
+
+> Go was absent when apply ran and the three gates below it were first recorded BLOCKED. Go 1.27.1
+> was installed afterwards (`brew install go`) and all of them were re-run for real; this table is
+> the corrected record.
 
 The Go side of this change is one added test (`TestDefaultConfigAdvertisesHyperlinksFeature`) plus
-the conf line it asserts; no Go source changed. The test mirrors the adjacent
-`TestDefaultConfigContainsSourceDirective` and uses only `strings.Contains` and
-`DefaultConfigBytes()`, both already in the file's existing imports and call surface. It has
-**not** been compiled or executed here — CI is the first place it runs.
+the conf line it asserts; no Go source changed. It ran and passed once a toolchain was available.
 
-Acceptance items **A-008** and **A-009** (the two manual smoke checks) are likewise
-**unverifiable in this environment**: both need a running dashboard, and `just dev` starts the Go
-backend. They are the reason the tmux half of this change was proven by the investigation's
-controlled A/B (`0 → 4` OSC 8 sequences reaching the relay PTY) rather than by a gate here.
+### Deferred acceptance — now down to one item
 
-### Deferred acceptance (explicit, orchestrator decision)
+A-002 and A-009 were first recorded DEFERRED because no Go toolchain was present. Go 1.27.1 was
+installed afterwards and both were closed for real (A-002 by running the test; A-009 by exercising
+the real `@xterm/addon-serialize`). **A-008 remains the only deferred item.**
 
-A-002, A-008, and A-009 are checked as **DEFERRED**, not as verified. The review worker correctly
-declined to check them and flagged that hydrate requires all items `[x]`; this is the explicit
-acceptance that unblocks it, recorded rather than hidden:
+| Item | State | Detail |
+|------|-------|--------|
+| A-002 | **closed** | `TestDefaultConfigAdvertisesHyperlinksFeature` PASS; full `just test-backend` and `just build` green. |
+| A-009 | **closed, with a finding** | No throw, text intact — but the hyperlink attribute is dropped by both `serialize()` and `serializeAsHTML()`. See the correction below. |
+| A-008 | **deferred** — live dashboard check | The tmux half and the xterm half were each proven independently (below); what is still unproven is the two of them composed in the real dashboard, clicked by a human. Automating it is blocked by the same canvas-rendering limit that already keeps link clicks out of the e2e suite — headless Chromium paints no terminal content to screenshot. |
 
-| Item | Deferred to | Why it cannot be closed here |
-|------|-------------|------------------------------|
-| A-002 | **CI** (`just test-backend`, which stages the embed via `_ensure-tmux-conf` first) | No Go toolchain on this host — the added test has never been compiled. Statically verified: `strings` already imported, `DefaultConfigBytes()` in-package returning `[]byte`, unique test name, both asserted literals matching the staged embed byte-for-byte. |
-| A-008 | **Post-merge live check** on a host running the dashboard | Needs a running dashboard, which needs the Go backend. |
-| A-009 | **Post-merge live check** on a host running the dashboard | Same. |
+**Evidence gathered for the two halves** (both reproduced first-hand, not inherited):
 
-What *was* proven for the tmux half, so the deferral is narrow: the review worker reproduced the
-controlled A/B on this host (tmux 3.7c is present even though Go is not) — the pre-change conf
-delivered **0** OSC 8 sequences to a client PTY, the shipped conf delivered **4**, with the
-hyperlink present in tmux's grid in both runs; and `show -g terminal-features` on a server booted
-from the shipped conf lists all six entries with `xterm-256color:sync` and `xterm*:extkeys` intact
-and `terminal-overrides` unchanged (A-006). For the frontend half it read xterm's shipped
-`OscLinkProvider` and confirmed that with `linkHandler` set the `confirm()` fallback is
-unreachable (A-007) and the `allowNonHttpProtocols` guard still filters non-http(s) URIs (A-010).
+- *tmux half* — controlled A/B on tmux 3.7c, identical pane content, `TERM=xterm-256color`, PTY
+  client via `script`: **0** OSC 8 sequences reached the client with the pre-change conf, **6** with
+  the shipped conf. The re-emitted bytes are
+  `ESC]8;id=tmux1;https://example.com ESC\ Example Site ESC]8;; ESC\`.
+- *xterm half* — both code paths driven in a real browser against the shipped `@xterm/xterm`.
+  Without `linkHandler`: `confirm("Do you want to navigate to https://example.com? WARNING: …")`
+  followed by a URL-less `window.open()` → `about:blank` → dead link. With it:
+  `window.open("https://example.com", "_blank", "noopener,noreferrer")`.
 
-These three items MUST be closed before this change is considered done; they are called out in the
-PR body for that reason.
+### Correction — the SerializeAddon assumption was wrong
+
+`intake.md` § Impact and the investigation it came from state that "restoring a buffer containing
+OSC 8 is well-supported in xterm 6". Exercising it says otherwise: the addon preserves the link
+**text** but not the link. `serialize()` emits no OSC 8 at all, and `serializeAsHTML()` renders the
+link text as a plain `<span>` with no `<a>` and no URI anywhere in the output.
+
+This is a **limitation of the export path, not a regression**: before this change no OSC 8 reached
+xterm, so an export could not have carried one. Exported snapshots and transcripts therefore
+contain plain text where the live terminal shows a link. Recorded in
+`docs/memory/run-kit/ui/terminal.md` so the next person does not re-derive it.
 
 ### Known gap, not addressed (review nice-to-have)
 

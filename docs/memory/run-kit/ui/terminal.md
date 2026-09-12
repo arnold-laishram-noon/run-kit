@@ -174,6 +174,8 @@ With `linkHandler` null (the state before this change), that provider's `activat
 
 Covered by two unit tests in `terminal-client.test.tsx` (the `linkHandler` shape plus its `activate` → `window.open` path, and that both link paths reach the same opener). No e2e, for the same canvas-rendering reason as the addon above.
 
+**Exports drop the link, and that is a SerializeAddon limitation, not a bug here.** `SerializeAddon` preserves the link **text** but not the hyperlink: `serialize()` emits no OSC 8 sequence at all, and `serializeAsHTML()` renders the link text as a plain `<span>` — no `<a>`, no URI anywhere in the output. Verified against the shipped addon by round-tripping a buffer containing an OSC 8 link into a fresh `Terminal`: no throw, and the restored line reads `See Example Site done.` So a tty export snapshot or transcript (§ Terminal Export) carries plain text where the live terminal shows a link. This is not a regression — before OSC 8 reached xterm at all, an export could not have carried one — and it degrades gracefully, so it is recorded rather than worked around. (260912-ojdq)
+
 #### Find-in-terminal (the tty find bar's addon-search consumption)
 
 The tty tile's find bar ([lenses-and-layout](/run-kit/ui/lenses-and-layout.md) § Tile renderer → tty find bar) searches the xterm CLIENT BUFFER — what streamed since attach — never tmux history, and the bar says so: a muted `client buffer only (since attach)` scope note (`TERMINAL_FIND_SCOPE_NOTE`) appears in the hint area once a search has run. The mechanics live in the pure `lib/terminal-find.ts` module (the colocated-test convention, `terminal-find.test.ts`):
